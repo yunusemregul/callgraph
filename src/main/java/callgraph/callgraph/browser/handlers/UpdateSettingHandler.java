@@ -32,6 +32,12 @@ public class UpdateSettingHandler extends JSQueryHandler {
                 case "maxDepth":
                     try { settings.setMaxDepth(Integer.parseInt(value)); } catch (NumberFormatException ignored) {}
                     break;
+                case "maxCallersPerNode":
+                    try { settings.setMaxCallersPerNode(Integer.parseInt(value)); } catch (NumberFormatException ignored) {}
+                    break;
+                case "maxTotalNodes":
+                    try { settings.setMaxTotalNodes(Integer.parseInt(value)); } catch (NumberFormatException ignored) {}
+                    break;
                 case "graphDirection":
                     settings.setGraphDirection(value);
                     break;

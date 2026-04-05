@@ -21,7 +21,9 @@ import org.json.simple.JSONObject;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
 @SuppressWarnings("unchecked")
 @Service(Service.Level.PROJECT)
@@ -32,6 +34,7 @@ public final class CallGraphGenerator {
     private final JSONObject groups;
     private final HashMap<Integer, PsiElement> references = new HashMap<>();
     private final HashMap<Integer, Integer> nodeLevels = new HashMap<>();
+    private final Set<Integer> truncatedNodes = new HashSet<>();
     private PsiMethod lastGeneratedMethod;
 
     public CallGraphGenerator(Project project) {
@@ -107,6 +110,9 @@ public final class CallGraphGenerator {
 
         int parentLevel = nodeLevels.getOrDefault(hashCode, 0);
 
+        // Clear truncated state for this node before re-expanding so we can detect fresh truncation
+        truncatedNodes.remove(hashCode);
+
         if (CallGraphSettings.DIRECTION_CALLERS.equals(direction) || CallGraphSettings.DIRECTION_BOTH.equals(direction)) {
             findDirectCallers(method, parentLevel + 1, settings, newNodes, newEdges, newGroups);
         }
@@ -118,10 +124,14 @@ public final class CallGraphGenerator {
         edges.addAll(newEdges);
         groups.putAll(newGroups);
 
+        JSONArray truncated = new JSONArray();
+        truncated.addAll(truncatedNodes);
+
         JSONObject result = new JSONObject();
         result.put("nodes", newNodes);
         result.put("edges", newEdges);
         result.put("groups", newGroups);
+        result.put("truncatedNodes", truncated);
         return result.toJSONString();
     }
 
@@ -130,6 +140,9 @@ public final class CallGraphGenerator {
         graph.put("nodes", nodes);
         graph.put("edges", edges);
         graph.put("groups", groups);
+        JSONArray truncated = new JSONArray();
+        truncated.addAll(truncatedNodes);
+        graph.put("truncatedNodes", truncated);
         return graph.toJSONString();
     }
 
@@ -139,12 +152,16 @@ public final class CallGraphGenerator {
         groups.clear();
         references.clear();
         nodeLevels.clear();
+        truncatedNodes.clear();
     }
 
     private void findAndAddCallers(PsiMethod method, int depth, CallGraphSettings settings) {
         if (depth > settings.getMaxDepth()) return;
+        if (nodes.size() >= settings.getMaxTotalNodes()) return;
 
         Collection<PsiReference> allReferences = collectCallerReferences(method);
+        int cap = settings.getMaxCallersPerNode();
+        int added = 0;
 
         for (PsiReference reference : allReferences) {
             PsiElement callReference = reference.getElement();
@@ -154,6 +171,11 @@ public final class CallGraphGenerator {
             if (caller == null || !caller.getProject().equals(method.getProject())) continue;
             if (caller.getContainingClass() == null) continue;
             if (settings.isFilterTestCode() && isTestCode(caller)) continue;
+
+            if (added >= cap || nodes.size() >= settings.getMaxTotalNodes()) {
+                truncatedNodes.add(method.hashCode());
+                break;
+            }
 
             boolean nodeNotExists = !references.containsKey(caller.hashCode());
             if (nodeNotExists) {
@@ -165,8 +187,9 @@ public final class CallGraphGenerator {
 
             references.put(callReference.hashCode(), callReference);
             edges.add(createCallerEdge(method, callReference, caller));
+            added++;
 
-            if (nodeNotExists) {
+            if (nodeNotExists && nodes.size() < settings.getMaxTotalNodes()) {
                 findAndAddCallers(caller, depth + 1, settings);
             }
         }
@@ -174,8 +197,10 @@ public final class CallGraphGenerator {
 
     private void findAndAddCallees(PsiMethod method, int depth, CallGraphSettings settings) {
         if (depth > settings.getMaxDepth()) return;
+        if (nodes.size() >= settings.getMaxTotalNodes()) return;
 
         for (CallSite site : collectCalleeSites(method)) {
+            if (nodes.size() >= settings.getMaxTotalNodes()) break;
             PsiMethod callee = site.callee;
             PsiElement callExpr = site.callExpr;
             if (callee.getContainingClass() == null) continue;
@@ -194,7 +219,7 @@ public final class CallGraphGenerator {
             references.put(callExpr.hashCode(), callExpr);
             edges.add(createCalleeEdge(method, callExpr, callee));
 
-            if (nodeNotExists) {
+            if (nodeNotExists && nodes.size() < settings.getMaxTotalNodes()) {
                 findAndAddCallees(callee, depth + 1, settings);
             }
         }
@@ -203,6 +228,8 @@ public final class CallGraphGenerator {
     private void findDirectCallers(PsiMethod method, int level, CallGraphSettings settings,
                                     JSONArray newNodes, JSONArray newEdges, JSONObject newGroups) {
         Collection<PsiReference> allReferences = collectCallerReferences(method);
+        int cap = settings.getMaxCallersPerNode();
+        int added = 0;
 
         for (PsiReference reference : allReferences) {
             PsiElement callReference = reference.getElement();
@@ -213,6 +240,11 @@ public final class CallGraphGenerator {
             if (caller.getContainingClass() == null) continue;
             if (settings.isFilterTestCode() && isTestCode(caller)) continue;
 
+            if (added >= cap || nodes.size() + newNodes.size() >= settings.getMaxTotalNodes()) {
+                truncatedNodes.add(method.hashCode());
+                break;
+            }
+
             if (!references.containsKey(caller.hashCode())) {
                 references.put(caller.hashCode(), caller);
                 nodeLevels.put(caller.hashCode(), level);
@@ -222,12 +254,14 @@ public final class CallGraphGenerator {
 
             references.put(callReference.hashCode(), callReference);
             newEdges.add(createCallerEdge(method, callReference, caller));
+            added++;
         }
     }
 
     private void findDirectCallees(PsiMethod method, int level, CallGraphSettings settings,
                                     JSONArray newNodes, JSONArray newEdges, JSONObject newGroups) {
         for (CallSite site : collectCalleeSites(method)) {
+            if (nodes.size() + newNodes.size() >= settings.getMaxTotalNodes()) break;
             PsiMethod callee = site.callee;
             PsiElement callExpr = site.callExpr;
             if (callee.getContainingClass() == null) continue;
@@ -313,7 +347,7 @@ public final class CallGraphGenerator {
         }
 
         node.put("label", label);
-        node.put("hasCallers", !collectCallerReferences(method).isEmpty());
+        node.put("hasCallers", true);
         node.put("hasCallees", hasCallees(method));
         return node;
     }

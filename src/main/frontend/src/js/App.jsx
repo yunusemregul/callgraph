@@ -47,12 +47,28 @@ export default function App() {
                 }
             },
             'Max Depth': {
-                value: 5, min: 2, max: 20, step: 1,
+                value: 8, min: 2, max: 20, step: 1,
                 disabled: isLazyMode,
                 onChange: (v, _, { initial }) => {
                     if (initial) return
                     setNeedsRegen(true)
                     window.JavaBridge.updateSetting('maxDepth|' + Math.round(v))
+                }
+            },
+            'Max Callers Per Node': {
+                value: 10, min: 1, max: 200, step: 1,
+                onChange: (v, _, { initial }) => {
+                    if (initial) return
+                    setNeedsRegen(true)
+                    window.JavaBridge.updateSetting('maxCallersPerNode|' + Math.round(v))
+                }
+            },
+            'Max Total Nodes': {
+                value: 150, min: 10, max: 2000, step: 10,
+                onChange: (v, _, { initial }) => {
+                    if (initial) return
+                    setNeedsRegen(true)
+                    window.JavaBridge.updateSetting('maxTotalNodes|' + Math.round(v))
                 }
             },
             'Direction': {
@@ -126,6 +142,7 @@ export default function App() {
             expandedCallers: new Set(),
             expandedCallees: new Set(),
             nodesWithSatellites: new Set(),
+            truncatedNodes: new Set(),
             pendingExpandDirection: null,
             pendingExpandParent: null,
             rootNodeId: null,
@@ -144,26 +161,39 @@ export default function App() {
             const newNodes = [], newEdges = []
 
             const nodeData = n.body.data.nodes.get(nodeId)
-            if (!s.expandedCallers.has(nodeId) && nodeData?.hasCallers) {
+            if (!s.expandedCallers.has(nodeId) && (s.isLazyMode || s.truncatedNodes.has(nodeId))) {
+                const isTruncated = s.truncatedNodes.has(nodeId)
                 newNodes.push({
-                    id: '__callers__' + nodeId, label: '+ callers', shape: 'diamond', size: 18,
-                    color: { background: '#1a2a3a', border: '#4A7FC1', highlight: { background: '#1e3248', border: '#6A9FE1' }, hover: { background: '#1e3248', border: '#6A9FE1' } },
-                    font: { color: '#7AB3E8', size: 10, bold: true },
+                    id: '__callers__' + nodeId,
+                    label: isTruncated ? '+ more callers' : '+ callers',
+                    shape: 'box',
+                    shapeProperties: { borderRadius: 6 },
+                    margin: { top: 6, bottom: 6, left: 10, right: 10 },
+                    color: { background: '#1e3a5f', border: '#4A8FD4', highlight: { background: '#2a4f7a', border: '#6AAFFF' }, hover: { background: '#2a4f7a', border: '#6AAFFF' } },
+                    font: { color: '#C8E4FF', size: 11, bold: true },
                     borderWidth: 2,
-                    shadow: { enabled: true, color: 'rgba(74,127,193,0.5)', size: 10, x: 0, y: 0 },
+                    borderWidthSelected: 3,
+                    shadow: { enabled: true, color: 'rgba(74,143,212,0.5)', size: 14, x: 0, y: 3 },
+                    title: 'Click to load callers',
                 })
-                newEdges.push({ id: '__edge_callers__' + nodeId, from: nodeId, to: '__callers__' + nodeId, length: 60, dashes: [4, 4], arrows: { to: { enabled: false } }, color: { color: '#4A7FC1', opacity: 0.5 }, selectable: false, hoverWidth: 0 })
+                newEdges.push({ id: '__edge_callers__' + nodeId, from: nodeId, to: '__callers__' + nodeId, length: 70, dashes: [5, 5], arrows: { to: { enabled: false } }, color: { color: '#4A8FD4', opacity: 0.45 }, selectable: false, hoverWidth: 0 })
             }
 
             if (nodeId === s.rootNodeId && !s.expandedCallees.has(nodeId) && nodeData?.hasCallees) {
                 newNodes.push({
-                    id: '__callees__' + nodeId, label: '+ callees', shape: 'diamond', size: 18,
-                    color: { background: '#1a2e1e', border: '#5BAD6F', highlight: { background: '#1e3823', border: '#7BCF8F' }, hover: { background: '#1e3823', border: '#7BCF8F' } },
-                    font: { color: '#7BCF8F', size: 10, bold: true },
+                    id: '__callees__' + nodeId,
+                    label: '+ callees',
+                    shape: 'box',
+                    shapeProperties: { borderRadius: 6 },
+                    margin: { top: 6, bottom: 6, left: 10, right: 10 },
+                    color: { background: '#1a3a22', border: '#4AAD64', highlight: { background: '#255030', border: '#6ACD84' }, hover: { background: '#255030', border: '#6ACD84' } },
+                    font: { color: '#C0F0CC', size: 11, bold: true },
                     borderWidth: 2,
-                    shadow: { enabled: true, color: 'rgba(91,173,111,0.5)', size: 10, x: 0, y: 0 },
+                    borderWidthSelected: 3,
+                    shadow: { enabled: true, color: 'rgba(74,173,100,0.5)', size: 14, x: 0, y: 3 },
+                    title: 'Click to load callees',
                 })
-                newEdges.push({ id: '__edge_callees__' + nodeId, from: nodeId, to: '__callees__' + nodeId, length: 60, dashes: [4, 4], arrows: { to: { enabled: false } }, color: { color: '#5BAD6F', opacity: 0.5 }, selectable: false, hoverWidth: 0 })
+                newEdges.push({ id: '__edge_callees__' + nodeId, from: nodeId, to: '__callees__' + nodeId, length: 70, dashes: [5, 5], arrows: { to: { enabled: false } }, color: { color: '#4AAD64', opacity: 0.45 }, selectable: false, hoverWidth: 0 })
             }
 
             if (newNodes.length > 0) {
@@ -247,6 +277,7 @@ export default function App() {
             s.expandedCallers.clear()
             s.expandedCallees.clear()
             s.nodesWithSatellites.clear()
+            s.truncatedNodes.clear()
             s.pendingExpandDirection = null
             s.pendingExpandParent = null
             s.rootNodeId = null
@@ -264,13 +295,15 @@ export default function App() {
                 const opts = { ...visOptions, groups: data.groups }
                 n.setOptions(opts)
                 n.setData(data)
+                ;(data.truncatedNodes || []).forEach(id => s.truncatedNodes.add(id))
                 // Mark nodes that already have connections as expanded so satellites don't re-add them
+                // Exception: truncated nodes keep their callers satellite so user can load more
                 data.nodes.forEach(node => {
                     const edges = n.getConnectedEdges(node.id)
                     edges.forEach(edgeId => {
                         const edge = n.body.data.edges.get(edgeId)
                         if (!edge || typeof edgeId === 'string') return
-                        if (edge.to === node.id) s.expandedCallers.add(node.id)
+                        if (edge.to === node.id && !s.truncatedNodes.has(node.id)) s.expandedCallers.add(node.id)
                         if (edge.from === node.id) s.expandedCallees.add(node.id)
                     })
                 })
@@ -294,6 +327,14 @@ export default function App() {
             s.pendingExpandParent = null
 
             const seeded = seedPositionNearParent(data.nodes, expandParent)
+            // Sync truncated set from backend response
+            s.truncatedNodes.clear()
+            ;(data.truncatedNodes || []).forEach(id => s.truncatedNodes.add(id))
+            // If parent is still truncated after this batch, keep satellite available for next batch
+            if (expandParent && s.truncatedNodes.has(expandParent)) {
+                s.expandedCallers.delete(expandParent)
+                showSatellitesForNode(expandParent)
+            }
 
             // Pin all existing nodes (including satellites) so they don't move while new ones settle
             const existingIds = n.body.data.nodes.getIds()
@@ -406,6 +447,8 @@ export default function App() {
             window.__levaSet?.({
                 'Lazy Mode': settings.lazyExpansion,
                 'Max Depth': Math.max(2, settings.maxDepth),
+                'Max Callers Per Node': settings.maxCallersPerNode ?? 10,
+                'Max Total Nodes': settings.maxTotalNodes ?? 150,
                 'Direction': settings.graphDirection,
                 'Filter Out Tests': settings.filterTestCode,
                 'Use IDE Background': useIde,
@@ -548,6 +591,8 @@ export default function App() {
 const LEVA_HINTS = {
     'Lazy Mode': 'Start with just the selected method and expand callers/callees one step at a time by clicking the + nodes. When off, the full graph is generated up to Max Depth.',
     'Max Depth': 'How many levels deep to traverse when Lazy Mode is off. Higher values can produce very large graphs.',
+    'Max Callers Per Node': 'Maximum number of callers to load per node. If a method has more callers than this limit, a + callers satellite will remain so you can load the next batch.',
+    'Max Total Nodes': 'Hard cap on the total number of nodes in the graph. Traversal stops once this limit is reached, preventing hangs on large codebases.',
     'Direction': 'Callers: who calls the selected method. Callees: what the selected method calls. Both: expand in both directions.',
     'Filter Out Tests': 'Hide test classes and methods from the graph. Detects JUnit/TestNG annotations, class names starting with Test, and files in test source roots.',
     'Physics': 'Enable live physics simulation. Nodes will repel and settle naturally. Useful after adding many nodes — or use the Reposition button instead.',

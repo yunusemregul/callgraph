@@ -26,7 +26,9 @@ public class CallGraphSettings implements PersistentStateComponent<CallGraphSett
     // Default settings
     private String backgroundType = BACKGROUND_TYPE_CUSTOM;
     private String customBackgroundColor = "#000000"; // Default to black
-    private int maxDepth = 5;
+    private int maxDepth = 8;
+    private int maxCallersPerNode = 10;
+    private int maxTotalNodes = 150;
     private boolean filterTestCode = true;
     private String graphDirection = DIRECTION_CALLERS;
     private boolean lazyExpansion = false;
@@ -73,6 +75,22 @@ public class CallGraphSettings implements PersistentStateComponent<CallGraphSett
 
     public void setMaxDepth(int maxDepth) {
         this.maxDepth = maxDepth;
+    }
+
+    public int getMaxCallersPerNode() {
+        return maxCallersPerNode;
+    }
+
+    public void setMaxCallersPerNode(int maxCallersPerNode) {
+        this.maxCallersPerNode = maxCallersPerNode;
+    }
+
+    public int getMaxTotalNodes() {
+        return maxTotalNodes;
+    }
+
+    public void setMaxTotalNodes(int maxTotalNodes) {
+        this.maxTotalNodes = maxTotalNodes;
     }
 
     public boolean isFilterTestCode() {

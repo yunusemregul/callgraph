@@ -84,6 +84,8 @@ public final class BrowserManager {
         String ideBgColor = "#" + ColorUtil.toHex(editorBg);
         String json = "{\"lazyExpansion\":" + s.isLazyExpansion()
                 + ",\"maxDepth\":" + s.getMaxDepth()
+                + ",\"maxCallersPerNode\":" + s.getMaxCallersPerNode()
+                + ",\"maxTotalNodes\":" + s.getMaxTotalNodes()
                 + ",\"graphDirection\":\"" + s.getGraphDirection() + "\""
                 + ",\"filterTestCode\":" + s.isFilterTestCode()
                 + ",\"backgroundType\":\"" + s.getBackgroundType() + "\""
