@@ -25,13 +25,21 @@ const options = {
         enabled: false,
         barnesHut: {
             theta: 0.5,
-            gravitationalConstant: -3000,
+            gravitationalConstant: -2000,
+            centralGravity: 0.05,
             springLength: 120,
             springConstant: 0.04,
-            damping: 0.09,
+            damping: 0.7,
             avoidOverlap: 0.5
         },
-        solver: 'barnesHut'
+        solver: 'barnesHut',
+        stabilization: {
+            enabled: true,
+            iterations: 200,
+            updateInterval: 25,
+            fit: true
+        },
+        minVelocity: 0.75
     },
     layout: {
         randomSeed: 0

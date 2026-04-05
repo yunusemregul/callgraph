@@ -27,6 +27,7 @@ export default function App() {
     const [isGraphFitted, setIsGraphFitted] = useState(false)
     const [selectedNodeId, setSelectedNodeId] = useState(null)
     const [hasHidden, setHasHidden] = useState(false)
+    const [isLazyMode, setIsLazyMode] = useState(true)
     const ideBackgroundColor = useRef('#000000')
 
     // ── Leva controls ─────────────────────────────────────────────────────────
@@ -36,12 +37,14 @@ export default function App() {
                 value: true,
                 onChange: (v, _, { initial }) => {
                     if (initial) return
+                    setIsLazyMode(v)
                     window.__appState.isLazyMode = v
                     window.JavaBridge.updateSetting('lazyExpansion|' + v)
                 }
             },
             'Max Depth': {
                 value: 5, min: 2, max: 50, step: 1,
+                disabled: isLazyMode,
                 onChange: (v, _, { initial }) => {
                     if (initial) return
                     window.JavaBridge.updateSetting('maxDepth|' + Math.round(v))
@@ -89,7 +92,7 @@ export default function App() {
                 }
             },
         }, { collapsed: true }),
-    }))
+    }), [isLazyMode])
 
     // Expose setter so Java can push initial values
     useEffect(() => {
@@ -124,29 +127,28 @@ export default function App() {
             if (!s.isLazyMode) return
             removeSatellitesForNode(nodeId)
 
-            const pos = n.getPositions([nodeId])[nodeId]
-            if (!pos) return
-
-            const newNodes = [], newEdges = [], offset = 90
+            const newNodes = [], newEdges = []
 
             if (!s.expandedCallers.has(nodeId)) {
                 newNodes.push({
-                    id: '__callers__' + nodeId, label: '+\nCallers', shape: 'circle', size: 24,
-                    color: { background: '#4A7FC1', border: '#2B5FA0', highlight: { background: '#5A8FD1', border: '#1A4F90' }, hover: { background: '#5A8FD1', border: '#1A4F90' } },
-                    font: { color: '#FFF', size: 10, multi: false },
-                    x: pos.x - offset, y: pos.y, physics: false
+                    id: '__callers__' + nodeId, label: '+ callers', shape: 'diamond', size: 18,
+                    color: { background: '#1a2a3a', border: '#4A7FC1', highlight: { background: '#1e3248', border: '#6A9FE1' }, hover: { background: '#1e3248', border: '#6A9FE1' } },
+                    font: { color: '#7AB3E8', size: 10, bold: true },
+                    borderWidth: 2,
+                    shadow: { enabled: true, color: 'rgba(74,127,193,0.5)', size: 10, x: 0, y: 0 },
                 })
-                newEdges.push({ id: '__edge_callers__' + nodeId, from: nodeId, to: '__callers__' + nodeId, dashes: [4, 4], arrows: { to: { enabled: false } }, color: { color: '#4A7FC1', opacity: 0.6 }, selectable: false, hoverWidth: 0 })
+                newEdges.push({ id: '__edge_callers__' + nodeId, from: nodeId, to: '__callers__' + nodeId, length: 60, dashes: [4, 4], arrows: { to: { enabled: false } }, color: { color: '#4A7FC1', opacity: 0.5 }, selectable: false, hoverWidth: 0 })
             }
 
             if (!s.expandedCallees.has(nodeId)) {
                 newNodes.push({
-                    id: '__callees__' + nodeId, label: '+\nCallees', shape: 'circle', size: 24,
-                    color: { background: '#5BAD6F', border: '#3A8D4F', highlight: { background: '#6BBD7F', border: '#2A7D3F' }, hover: { background: '#6BBD7F', border: '#2A7D3F' } },
-                    font: { color: '#FFF', size: 10, multi: false },
-                    x: pos.x + offset, y: pos.y, physics: false
+                    id: '__callees__' + nodeId, label: '+ callees', shape: 'diamond', size: 18,
+                    color: { background: '#1a2e1e', border: '#5BAD6F', highlight: { background: '#1e3823', border: '#7BCF8F' }, hover: { background: '#1e3823', border: '#7BCF8F' } },
+                    font: { color: '#7BCF8F', size: 10, bold: true },
+                    borderWidth: 2,
+                    shadow: { enabled: true, color: 'rgba(91,173,111,0.5)', size: 10, x: 0, y: 0 },
                 })
-                newEdges.push({ id: '__edge_callees__' + nodeId, from: nodeId, to: '__callees__' + nodeId, dashes: [4, 4], arrows: { to: { enabled: false } }, color: { color: '#5BAD6F', opacity: 0.6 }, selectable: false, hoverWidth: 0 })
+                newEdges.push({ id: '__edge_callees__' + nodeId, from: nodeId, to: '__callees__' + nodeId, length: 60, dashes: [4, 4], arrows: { to: { enabled: false } }, color: { color: '#5BAD6F', opacity: 0.5 }, selectable: false, hoverWidth: 0 })
             }
 
             if (newNodes.length > 0) {
@@ -208,6 +210,7 @@ export default function App() {
         })
 
         n.on('stabilizationIterationsDone', () => {
+            if (s.rootNodeId !== null) n.body.data.nodes.update({ id: s.rootNodeId, fixed: { x: true, y: true } })
             setShowNetwork(true)
             setIsGraphGenerated(true)
             // Defer fit until after React re-renders the network div (was display:none)
@@ -263,14 +266,44 @@ export default function App() {
             s.pendingExpandDirection = null
             s.pendingExpandParent = null
 
-            const positioned = positionAroundParent(data.nodes, expandParent, expandDirection)
-            n.body.data.nodes.add(positioned)
-            n.body.data.edges.add(data.edges)
-
-            positioned.forEach(node => {
+            const seeded = seedPositionNearParent(data.nodes, expandParent)
+            seeded.forEach(node => {
                 if (expandDirection === 'callers') s.expandedCallees.add(node.id)
                 else if (expandDirection === 'callees') s.expandedCallers.add(node.id)
-                showSatellitesForNode(node.id)
+            })
+
+            // Pin all existing nodes (including satellites) so they don't move while new ones settle
+            const existingIds = n.body.data.nodes.getIds()
+            existingIds.forEach(id => n.body.data.nodes.update({ id, fixed: { x: true, y: true } }))
+
+            n.body.data.nodes.add(seeded)
+            n.body.data.edges.add(data.edges)
+
+            // Only show satellites for newly added nodes
+            seeded.forEach(node => showSatellitesForNode(node.id))
+
+            n.setOptions({ physics: { enabled: true } })
+            window.__levaSet?.({ 'Physics': true })
+
+            // Kick new nodes after physics is running so velocity isn't reset
+            requestAnimationFrame(() => {
+                seeded.forEach(node => {
+                    const body = n.body.nodes[node.id]
+                    if (body) {
+                        const angle = Math.random() * 2 * Math.PI
+                        body.vx = Math.cos(angle) * 200
+                        body.vy = Math.sin(angle) * 200
+                    }
+                })
+            })
+
+            n.once('stabilized', () => {
+                n.body.data.nodes.getIds().forEach(id => {
+                    if (id === s.rootNodeId || typeof id === 'string') return
+                    n.body.data.nodes.update({ id, fixed: { x: false, y: false } })
+                })
+                n.setOptions({ physics: { enabled: false } })
+                window.__levaSet?.({ 'Physics': false })
             })
         }
 
@@ -318,11 +351,13 @@ export default function App() {
 
         window.setLazyMode = (enabled) => {
             s.isLazyMode = enabled
+            setIsLazyMode(enabled)
             window.__levaSet?.({ 'Lazy Mode': enabled })
         }
 
         window.setInitialSettings = (settings) => {
             s.isLazyMode = settings.lazyExpansion
+            setIsLazyMode(settings.lazyExpansion)
             ideBackgroundColor.current = settings.ideBackgroundColor || '#000000'
             const useIde = settings.backgroundType === 'ide'
             const bg = useIde ? settings.ideBackgroundColor : (settings.customBackgroundColor || '#000000')
@@ -490,17 +525,15 @@ function applyBackground(color) {
     if (el) el.style.backgroundColor = color
 }
 
-function positionAroundParent(nodes, parentId, direction) {
-    if (!parentId || !nodes.length || !window.__networkRef) return nodes
-    // Access network via module-level ref trick
+function seedPositionNearParent(nodes, parentId) {
+    if (!parentId || !nodes.length) return nodes
     const n = window.__networkInstance
     if (!n) return nodes
     const parentPos = n.getPositions([parentId])[parentId]
     if (!parentPos) return nodes
-    const count = nodes.length
-    const directionSign = direction === 'callers' ? -1 : 1
-    return nodes.map((node, i) => {
-        const offsetX = count > 1 ? (i - (count - 1) / 2) * 150 : 0
-        return Object.assign({}, node, { x: parentPos.x + offsetX, y: parentPos.y + directionSign * 160, physics: false })
+    return nodes.map(node => {
+        const angle = Math.random() * 2 * Math.PI
+        const r = 40 + Math.random() * 40
+        return Object.assign({}, node, { x: parentPos.x + Math.cos(angle) * r, y: parentPos.y + Math.sin(angle) * r })
     })
 }
