@@ -28,6 +28,7 @@ export default function App() {
     const [selectedNodeId, setSelectedNodeId] = useState(null)
     const [hasHidden, setHasHidden] = useState(false)
     const [isLazyMode, setIsLazyMode] = useState(true)
+    const [needsRegen, setNeedsRegen] = useState(false)
     const ideBackgroundColor = useRef('#000000')
 
     // ── Leva controls ─────────────────────────────────────────────────────────
@@ -38,6 +39,7 @@ export default function App() {
                 onChange: (v, _, { initial }) => {
                     if (initial) return
                     setIsLazyMode(v)
+                    setNeedsRegen(true)
                     window.__appState.isLazyMode = v
                     window.JavaBridge.updateSetting('lazyExpansion|' + v)
                 }
@@ -47,6 +49,7 @@ export default function App() {
                 disabled: isLazyMode,
                 onChange: (v, _, { initial }) => {
                     if (initial) return
+                    setNeedsRegen(true)
                     window.JavaBridge.updateSetting('maxDepth|' + Math.round(v))
                 }
             },
@@ -55,6 +58,7 @@ export default function App() {
                 options: { Callers: 'callers', Callees: 'callees', Both: 'both' },
                 onChange: (v, _, { initial }) => {
                     if (initial) return
+                    setNeedsRegen(true)
                     window.JavaBridge.updateSetting('graphDirection|' + v)
                 }
             },
@@ -62,6 +66,7 @@ export default function App() {
                 value: false,
                 onChange: (v, _, { initial }) => {
                     if (initial) return
+                    setNeedsRegen(true)
                     window.JavaBridge.updateSetting('filterTestCode|' + v)
                 }
             },
@@ -94,10 +99,11 @@ export default function App() {
         }, { collapsed: true }),
     }), [isLazyMode])
 
-    // Expose setter so Java can push initial values
+    // Expose setters so Java and graph logic can push values
     useEffect(() => {
         window.__levaSet = setLevaValues
-    }, [setLevaValues])
+        window.__setNeedsRegen = setNeedsRegen
+    }, [setLevaValues, setNeedsRegen])
 
     // ── Graph logic (runs once, all closures capture stable setState fns) ─────
     useEffect(() => {
@@ -124,12 +130,12 @@ export default function App() {
         // ── Satellites ────────────────────────────────────────────────────────
 
         function showSatellitesForNode(nodeId) {
-            if (!s.isLazyMode) return
             removeSatellitesForNode(nodeId)
 
             const newNodes = [], newEdges = []
 
-            if (!s.expandedCallers.has(nodeId)) {
+            const nodeData = n.body.data.nodes.get(nodeId)
+            if (!s.expandedCallers.has(nodeId) && nodeData?.hasCallers) {
                 newNodes.push({
                     id: '__callers__' + nodeId, label: '+ callers', shape: 'diamond', size: 18,
                     color: { background: '#1a2a3a', border: '#4A7FC1', highlight: { background: '#1e3248', border: '#6A9FE1' }, hover: { background: '#1e3248', border: '#6A9FE1' } },
@@ -140,7 +146,7 @@ export default function App() {
                 newEdges.push({ id: '__edge_callers__' + nodeId, from: nodeId, to: '__callers__' + nodeId, length: 60, dashes: [4, 4], arrows: { to: { enabled: false } }, color: { color: '#4A7FC1', opacity: 0.5 }, selectable: false, hoverWidth: 0 })
             }
 
-            if (!s.expandedCallees.has(nodeId)) {
+            if (nodeId === s.rootNodeId && !s.expandedCallees.has(nodeId) && nodeData?.hasCallees) {
                 newNodes.push({
                     id: '__callees__' + nodeId, label: '+ callees', shape: 'diamond', size: 18,
                     color: { background: '#1a2e1e', border: '#5BAD6F', highlight: { background: '#1e3823', border: '#7BCF8F' }, hover: { background: '#1e3823', border: '#7BCF8F' } },
@@ -217,7 +223,6 @@ export default function App() {
             setTimeout(() => {
                 n.fit()
                 setIsGraphFitted(true)
-                if (s.rootNodeId !== null) showSatellitesForNode(s.rootNodeId)
             }, 0)
         })
 
@@ -240,6 +245,7 @@ export default function App() {
             setHasHidden(false)
             setIsGraphFitted(false)
             setIsGraphGenerated(false)
+            setNeedsRegen(false)
             setShowNetwork(false)
             setMessage('Rendering graph...')
             try {
@@ -249,6 +255,18 @@ export default function App() {
                 const opts = { ...visOptions, groups: data.groups }
                 n.setOptions(opts)
                 n.setData(data)
+                // Mark nodes that already have connections as expanded so satellites don't re-add them
+                data.nodes.forEach(node => {
+                    const edges = n.getConnectedEdges(node.id)
+                    edges.forEach(edgeId => {
+                        const edge = n.body.data.edges.get(edgeId)
+                        if (!edge || typeof edgeId === 'string') return
+                        if (edge.to === node.id) s.expandedCallers.add(node.id)
+                        if (edge.from === node.id) s.expandedCallees.add(node.id)
+                    })
+                })
+                // Add satellites before stabilizing so they're part of the simulation
+                data.nodes.forEach(node => showSatellitesForNode(node.id))
                 n.stabilize()
             } catch (e) {
                 setMessage(String(e))
@@ -267,10 +285,6 @@ export default function App() {
             s.pendingExpandParent = null
 
             const seeded = seedPositionNearParent(data.nodes, expandParent)
-            seeded.forEach(node => {
-                if (expandDirection === 'callers') s.expandedCallees.add(node.id)
-                else if (expandDirection === 'callees') s.expandedCallers.add(node.id)
-            })
 
             // Pin all existing nodes (including satellites) so they don't move while new ones settle
             const existingIds = n.body.data.nodes.getIds()
@@ -279,11 +293,15 @@ export default function App() {
             n.body.data.nodes.add(seeded)
             n.body.data.edges.add(data.edges)
 
+            // Ensure newly added nodes are not fixed
+            seeded.forEach(node => n.body.data.nodes.update({ id: node.id, fixed: { x: false, y: false } }))
+
             // Only show satellites for newly added nodes
             seeded.forEach(node => showSatellitesForNode(node.id))
 
+            const physicsWasEnabled = n.physics.options.enabled
             n.setOptions({ physics: { enabled: true } })
-            window.__levaSet?.({ 'Physics': true })
+            if (!physicsWasEnabled) window.__levaSet?.({ 'Physics': true })
 
             // Kick new nodes after physics is running so velocity isn't reset
             requestAnimationFrame(() => {
@@ -297,14 +315,28 @@ export default function App() {
                 })
             })
 
-            n.once('stabilized', () => {
+            const finishExpansion = () => {
                 n.body.data.nodes.getIds().forEach(id => {
-                    if (id === s.rootNodeId || typeof id === 'string') return
+                    if (id === s.rootNodeId) return
                     n.body.data.nodes.update({ id, fixed: { x: false, y: false } })
                 })
-                n.setOptions({ physics: { enabled: false } })
-                window.__levaSet?.({ 'Physics': false })
-            })
+                if (!physicsWasEnabled) {
+                    n.setOptions({ physics: { enabled: false } })
+                    window.__levaSet?.({ 'Physics': false })
+                }
+            }
+
+            // Fallback: disable physics after 5s if stabilized never fires
+            const fallbackTimer = setTimeout(() => {
+                n.off('stabilized', onStabilized)
+                finishExpansion()
+            }, 5000)
+
+            const onStabilized = () => {
+                clearTimeout(fallbackTimer)
+                finishExpansion()
+            }
+            n.once('stabilized', onStabilized)
         }
 
         window.showMessage = (msg) => {
@@ -379,14 +411,23 @@ export default function App() {
 
         window.reposition = () => {
             removeAllSatellites()
+            // Unpin all non-root nodes so physics can actually move them
+            n.body.data.nodes.getIds().forEach(id => {
+                if (id === s.rootNodeId || typeof id === 'string') return
+                n.body.data.nodes.update({ id, fixed: { x: false, y: false } })
+            })
             n.setOptions({ physics: { enabled: true } })
             n.once('stabilizationIterationsDone', () => {
-                n.setOptions({ physics: { enabled: false } })
+                // Add satellites while physics is still on so they settle into position
                 n.body.data.nodes.getIds().forEach(id => {
                     if (typeof id !== 'string') showSatellitesForNode(id)
                 })
-                n.fit()
-                setIsGraphFitted(true)
+                n.once('stabilizationIterationsDone', () => {
+                    n.setOptions({ physics: { enabled: false } })
+                    n.fit()
+                    setIsGraphFitted(true)
+                })
+                n.stabilize()
             })
             n.stabilize()
         }
@@ -435,6 +476,12 @@ export default function App() {
             <div id="network" ref={containerRef} style={{ display: showNetwork ? 'block' : 'none' }} />
 
             <div className="navbar">
+                {isGraphGenerated && needsRegen && (
+                    <div className="regen-warning" onClick={() => window.JavaBridge.generateGraph()}>
+                        <i className="fas fa-exclamation-triangle" style={{ marginRight: 6 }} />
+                        GRAPH MUST BE REGENERATED
+                    </div>
+                )}
                 <div className="generate-row" onClick={() => window.JavaBridge.generateGraph()} style={{ cursor: 'pointer' }}>
                     <button className="navbutton"><i className="fas fa-magic button-icon" />GENERATE</button>
                     {genMsg.text && <div className={`gen-message ${genMsg.cls}`}>{genMsg.text}</div>}
@@ -455,15 +502,13 @@ export default function App() {
                 {hasHidden && (
                     <button className="navbutton" onClick={() => window.showAllNodes()}><i className="fas fa-eye button-icon" />SHOW ALL</button>
                 )}
-            </div>
 
-            <LevaTooltip />
-
-            <div className="navbar-right">
                 {isGraphGenerated && (
                     <button className="navbutton" onClick={() => window.JavaBridge.saveAsHtml()}><i className="fas fa-download button-icon" />SAVE AS HTML</button>
                 )}
             </div>
+
+            <LevaTooltip />
         </>
     )
 }

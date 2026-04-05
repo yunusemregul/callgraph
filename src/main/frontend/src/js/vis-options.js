@@ -29,17 +29,17 @@ const options = {
             centralGravity: 0.05,
             springLength: 120,
             springConstant: 0.04,
-            damping: 0.7,
+            damping: 0.3,
             avoidOverlap: 0.5
         },
         solver: 'barnesHut',
         stabilization: {
             enabled: true,
-            iterations: 200,
-            updateInterval: 25,
+            iterations: 1500,
+            updateInterval: 50,
             fit: true
         },
-        minVelocity: 0.75
+        minVelocity: 0.1
     },
     layout: {
         randomSeed: 0

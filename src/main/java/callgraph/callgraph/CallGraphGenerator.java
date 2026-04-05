@@ -174,7 +174,7 @@ public final class CallGraphGenerator {
         for (PsiMethodCallExpression call : calls) {
             PsiMethod callee = call.resolveMethod();
             if (callee == null || callee.getContainingClass() == null) continue;
-            if (!callee.getProject().equals(project)) continue;
+            if (!isInProjectSource(callee)) continue;
             if (settings.isFilterTestCode() && isTestCode(callee)) continue;
             if (references.containsKey(call.hashCode())) continue;
 
@@ -229,7 +229,7 @@ public final class CallGraphGenerator {
         for (PsiMethodCallExpression call : calls) {
             PsiMethod callee = call.resolveMethod();
             if (callee == null || callee.getContainingClass() == null) continue;
-            if (!callee.getProject().equals(project)) continue;
+            if (!isInProjectSource(callee)) continue;
             if (settings.isFilterTestCode() && isTestCode(callee)) continue;
             if (references.containsKey(call.hashCode())) continue;
 
@@ -311,6 +311,8 @@ public final class CallGraphGenerator {
         }
 
         node.put("label", label);
+        node.put("hasCallers", !collectCallerReferences(method).isEmpty());
+        node.put("hasCallees", method.getBody() != null && !PsiTreeUtil.findChildrenOfType(method.getBody(), PsiMethodCallExpression.class).isEmpty());
         return node;
     }
 
@@ -398,6 +400,14 @@ public final class CallGraphGenerator {
 
     private JSONObject getGroup(PsiMethod method) {
         return (JSONObject) groups.get(method.getContainingClass().getQualifiedName());
+    }
+
+    private boolean isInProjectSource(PsiMethod method) {
+        PsiFile file = method.getContainingFile();
+        if (file == null) return false;
+        com.intellij.openapi.vfs.VirtualFile vFile = file.getVirtualFile();
+        if (vFile == null) return false;
+        return ProjectFileIndex.getInstance(project).isInSourceContent(vFile);
     }
 
     private static final java.util.Set<String> TEST_ANNOTATION_NAMES = new java.util.HashSet<>(java.util.Arrays.asList(

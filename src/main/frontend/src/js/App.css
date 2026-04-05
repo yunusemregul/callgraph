@@ -86,6 +86,23 @@ html, body, #root {
     border-color: #4A7FC1;
 }
 
+.regen-warning {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 5px 10px;
+    color: #f0c040;
+    font-size: 11px;
+    font-family: 'SFMono-Regular', Menlo, Consolas, monospace;
+    letter-spacing: 1px;
+    background: #2a2200;
+    border: 1px solid #7a6000;
+    border-radius: 2px;
+    cursor: pointer;
+    width: 100%;
+    box-sizing: border-box;
+}
+
 .gen-message {
     font-family: 'SFMono-Regular', Menlo, Consolas, monospace;
     font-size: 12px;

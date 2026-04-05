@@ -54,7 +54,8 @@ public class SaveAsHtmlHandler extends JSQueryHandler {
                     
                     // Add network update script
                     saveAsTemplate += "<script>updateNetwork(" + CallGraphGenerator.getInstance(project).getJson() + ")</script>";
-                    Utils.writeToFile(file.getPath() + "/callgraph_" + project.getName() + "_" + className + "_" + methodName + ".html", saveAsTemplate);
+                    String direction = settings.getGraphDirection();
+                    Utils.writeToFile(file.getPath() + "/callgraph_" + project.getName() + "_" + className + "_" + methodName + "_" + direction + ".html", saveAsTemplate);
                 } catch (IOException e) {
                     // TODO: handle this
                     throw new RuntimeException(e);
