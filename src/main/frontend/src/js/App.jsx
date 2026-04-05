@@ -27,15 +27,17 @@ export default function App() {
     const [isGraphFitted, setIsGraphFitted] = useState(false)
     const [selectedNodeId, setSelectedNodeId] = useState(null)
     const [hasHidden, setHasHidden] = useState(false)
-    const [isLazyMode, setIsLazyMode] = useState(true)
+    const [isLazyMode, setIsLazyMode] = useState(false)
     const [needsRegen, setNeedsRegen] = useState(false)
+    const [repositionProgress, setRepositionProgress] = useState(null) // null = not repositioning, 0-100 = progress
     const ideBackgroundColor = useRef('#000000')
+    const customBackgroundColor = useRef('#000000')
 
     // ── Leva controls ─────────────────────────────────────────────────────────
     const [, setLevaValues] = useControls(() => ({
         'Graph Settings': folder({
             'Lazy Mode': {
-                value: true,
+                value: false,
                 onChange: (v, _, { initial }) => {
                     if (initial) return
                     setIsLazyMode(v)
@@ -45,7 +47,7 @@ export default function App() {
                 }
             },
             'Max Depth': {
-                value: 5, min: 2, max: 50, step: 1,
+                value: 5, min: 2, max: 20, step: 1,
                 disabled: isLazyMode,
                 onChange: (v, _, { initial }) => {
                     if (initial) return
@@ -62,8 +64,8 @@ export default function App() {
                     window.JavaBridge.updateSetting('graphDirection|' + v)
                 }
             },
-            'Filter Tests': {
-                value: false,
+            'Filter Out Tests': {
+                value: true,
                 onChange: (v, _, { initial }) => {
                     if (initial) return
                     setNeedsRegen(true)
@@ -82,8 +84,11 @@ export default function App() {
             'Use IDE Background': {
                 value: false,
                 onChange: (v, _, { initial }) => {
+                    console.log('[UseIDE] onChange fired, v=', v, 'initial=', initial, 'ideColor=', ideBackgroundColor.current, 'customColor=', customBackgroundColor.current)
                     if (initial) return
-                    if (v) applyBackground(ideBackgroundColor.current)
+                    const bg = v ? ideBackgroundColor.current : customBackgroundColor.current
+                    console.log('[UseIDE] applying background:', bg)
+                    applyBackground(bg)
                     window.JavaBridge.updateSetting('backgroundType|' + (v ? 'ide' : 'custom'))
                 }
             },
@@ -91,7 +96,10 @@ export default function App() {
                 value: '#000000',
                 render: get => !get('Use IDE Background'),
                 onChange: (v, _, { initial }) => {
+                    console.log('[BgColor] onChange fired, v=', v, 'initial=', initial)
+                    customBackgroundColor.current = v
                     if (initial) return
+                    console.log('[BgColor] applying background:', v)
                     applyBackground(v)
                     window.JavaBridge.updateSetting('customBackgroundColor|' + v)
                 }
@@ -103,7 +111,8 @@ export default function App() {
     useEffect(() => {
         window.__levaSet = setLevaValues
         window.__setNeedsRegen = setNeedsRegen
-    }, [setLevaValues, setNeedsRegen])
+        window.__setRepositionProgress = setRepositionProgress
+    }, [setLevaValues, setNeedsRegen, setRepositionProgress])
 
     // ── Graph logic (runs once, all closures capture stable setState fns) ─────
     useEffect(() => {
@@ -120,7 +129,7 @@ export default function App() {
             pendingExpandDirection: null,
             pendingExpandParent: null,
             rootNodeId: null,
-            isLazyMode: true,
+            isLazyMode: false,
             currentGroups: {},
         }
 
@@ -391,13 +400,14 @@ export default function App() {
             s.isLazyMode = settings.lazyExpansion
             setIsLazyMode(settings.lazyExpansion)
             ideBackgroundColor.current = settings.ideBackgroundColor || '#000000'
+            customBackgroundColor.current = settings.customBackgroundColor || '#000000'
             const useIde = settings.backgroundType === 'ide'
             const bg = useIde ? settings.ideBackgroundColor : (settings.customBackgroundColor || '#000000')
             window.__levaSet?.({
                 'Lazy Mode': settings.lazyExpansion,
                 'Max Depth': Math.max(2, settings.maxDepth),
                 'Direction': settings.graphDirection,
-                'Filter Tests': settings.filterTestCode,
+                'Filter Out Tests': settings.filterTestCode,
                 'Use IDE Background': useIde,
                 'Background Color': settings.customBackgroundColor || '#000000',
             })
@@ -416,8 +426,18 @@ export default function App() {
                 if (id === s.rootNodeId || typeof id === 'string') return
                 n.body.data.nodes.update({ id, fixed: { x: false, y: false } })
             })
+
+            window.__setRepositionProgress?.(0)
+
+            const onProgress = (params) => {
+                window.__setRepositionProgress?.(Math.round(params.iterations / params.total * 100))
+            }
+            n.on('stabilizationProgress', onProgress)
+
             n.setOptions({ physics: { enabled: true } })
             n.once('stabilizationIterationsDone', () => {
+                n.off('stabilizationProgress', onProgress)
+                window.__setRepositionProgress?.(null)
                 // Add satellites while physics is still on so they settle into position
                 n.body.data.nodes.getIds().forEach(id => {
                     if (typeof id !== 'string') showSatellitesForNode(id)
@@ -475,6 +495,18 @@ export default function App() {
 
             <div id="network" ref={containerRef} style={{ display: showNetwork ? 'block' : 'none' }} />
 
+            {repositionProgress !== null && (
+                <div className="reposition-overlay">
+                    <div className="reposition-progress-box">
+                        <div className="reposition-label">REPOSITIONING</div>
+                        <div className="reposition-track">
+                            <div className="reposition-fill" style={{ width: repositionProgress + '%' }} />
+                        </div>
+                        <div className="reposition-pct">{repositionProgress}%</div>
+                    </div>
+                </div>
+            )}
+
             <div className="navbar">
                 {isGraphGenerated && needsRegen && (
                     <div className="regen-warning" onClick={() => window.JavaBridge.generateGraph()}>
@@ -517,7 +549,7 @@ const LEVA_HINTS = {
     'Lazy Mode': 'Start with just the selected method and expand callers/callees one step at a time by clicking the + nodes. When off, the full graph is generated up to Max Depth.',
     'Max Depth': 'How many levels deep to traverse when Lazy Mode is off. Higher values can produce very large graphs.',
     'Direction': 'Callers: who calls the selected method. Callees: what the selected method calls. Both: expand in both directions.',
-    'Filter Tests': 'Hide test classes and methods from the graph. Detects JUnit/TestNG annotations, class names starting with Test, and files in test source roots.',
+    'Filter Out Tests': 'Hide test classes and methods from the graph. Detects JUnit/TestNG annotations, class names starting with Test, and files in test source roots.',
     'Physics': 'Enable live physics simulation. Nodes will repel and settle naturally. Useful after adding many nodes — or use the Reposition button instead.',
     'Use IDE Background': 'Use the IDE editor background color instead of a custom color.',
     'Background Color': 'Custom background color for the graph canvas.',
@@ -565,7 +597,10 @@ function LevaTooltip() {
 }
 
 function applyBackground(color) {
+    document.documentElement.style.backgroundColor = color
     document.body.style.backgroundColor = color
+    const root = document.getElementById('root')
+    if (root) root.style.backgroundColor = color
     const el = document.getElementById('network')
     if (el) el.style.backgroundColor = color
 }
