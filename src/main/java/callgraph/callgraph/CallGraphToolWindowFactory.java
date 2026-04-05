@@ -1,4 +1,4 @@
-package callgraph.callgraph;
+    package callgraph.callgraph;
 
 import callgraph.callgraph.browser.BrowserManager;
 import com.intellij.openapi.editor.EditorFactory;

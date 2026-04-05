@@ -19,9 +19,17 @@ public class CallGraphSettings implements PersistentStateComponent<CallGraphSett
     public static final String BACKGROUND_TYPE_CUSTOM = "custom";
     public static final String BACKGROUND_TYPE_IDE = "ide";
     
+    public static final String DIRECTION_CALLERS = "callers";
+    public static final String DIRECTION_CALLEES = "callees";
+    public static final String DIRECTION_BOTH = "both";
+
     // Default settings
     private String backgroundType = BACKGROUND_TYPE_CUSTOM;
     private String customBackgroundColor = "#000000"; // Default to black
+    private int maxDepth = 5;
+    private boolean filterTestCode = false;
+    private String graphDirection = DIRECTION_CALLERS;
+    private boolean lazyExpansion = true;
 
     public static CallGraphSettings getInstance(Project project) {
         return project.getService(CallGraphSettings.class);
@@ -59,6 +67,38 @@ public class CallGraphSettings implements PersistentStateComponent<CallGraphSett
      * @param ideEditorBackgroundColor The IDE editor background color
      * @return The background color to use
      */
+    public int getMaxDepth() {
+        return maxDepth;
+    }
+
+    public void setMaxDepth(int maxDepth) {
+        this.maxDepth = maxDepth;
+    }
+
+    public boolean isFilterTestCode() {
+        return filterTestCode;
+    }
+
+    public void setFilterTestCode(boolean filterTestCode) {
+        this.filterTestCode = filterTestCode;
+    }
+
+    public String getGraphDirection() {
+        return graphDirection;
+    }
+
+    public void setGraphDirection(String graphDirection) {
+        this.graphDirection = graphDirection;
+    }
+
+    public boolean isLazyExpansion() {
+        return lazyExpansion;
+    }
+
+    public void setLazyExpansion(boolean lazyExpansion) {
+        this.lazyExpansion = lazyExpansion;
+    }
+
     public String getEffectiveBackgroundColor(String ideEditorBackgroundColor) {
         if (BACKGROUND_TYPE_IDE.equals(backgroundType)) {
             return ideEditorBackgroundColor;

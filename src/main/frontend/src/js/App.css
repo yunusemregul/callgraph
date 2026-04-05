@@ -1,0 +1,117 @@
+html, body, #root {
+    width: 100%;
+    height: 100%;
+    margin: 0;
+    background: #1a1a1a;
+    font-family: 'SFMono-Regular', Menlo, Consolas, monospace;
+    overflow: hidden;
+}
+
+#network {
+    width: 100%;
+    height: 100%;
+}
+
+.centered-message {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    font-size: 1.1em;
+    pointer-events: none;
+    text-align: center;
+    color: #888;
+    letter-spacing: 1px;
+    font-family: 'SFMono-Regular', Menlo, Consolas, monospace;
+}
+
+/* ── Navbar ──────────────────────────────────────────────────────────────── */
+
+.navbar {
+    position: absolute;
+    top: 12px;
+    left: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.navbar-right {
+    position: absolute;
+    top: 12px;
+    right: 12px;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 2px;
+}
+
+.navbutton {
+    font-family: 'SFMono-Regular', Menlo, Consolas, monospace;
+    text-transform: uppercase;
+    font-size: 12px;
+    letter-spacing: 2px;
+    display: block;
+    padding: 5px 8px;
+    background: #252525;
+    color: #aaa;
+    border: 1px solid #333;
+    text-align: left;
+    transition: background 0.15s, color 0.15s, border-color 0.15s;
+    cursor: pointer;
+    white-space: nowrap;
+    border-radius: 2px;
+}
+
+.navbutton:hover {
+    background: #2f2f2f;
+    color: #eee;
+    border-color: #4A7FC1;
+}
+
+.generate-row {
+    display: flex;
+    cursor: pointer;
+}
+
+.generate-row .navbutton {
+    color: #ccc;
+    background: #252525;
+    border-color: #444;
+}
+
+.generate-row:hover .navbutton {
+    background: #2f2f2f;
+    color: #fff;
+    border-color: #4A7FC1;
+}
+
+.gen-message {
+    font-family: 'SFMono-Regular', Menlo, Consolas, monospace;
+    font-size: 12px;
+    letter-spacing: 1px;
+    padding: 5px 8px;
+    color: #fff;
+    display: flex;
+    align-items: center;
+    white-space: nowrap;
+    border-radius: 0 2px 2px 0;
+}
+
+.gen-message-success { background: #2d6a35; border: 1px solid #3d8a45; border-left: none; }
+.gen-message-error   { background: #6a2d2d; border: 1px solid #8a3d3d; border-left: none; }
+
+.button-icon {
+    margin-right: 6px;
+    font-size: 0.9em;
+    opacity: 0.7;
+}
+
+/* ── Leva panel position override ────────────────────────────────────────── */
+
+#leva__root > div {
+    top: 56px !important;
+    left: 12px !important;
+    right: auto !important;
+}
+

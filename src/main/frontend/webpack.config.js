@@ -3,7 +3,7 @@ const path = require('path');
 
 module.exports = [
     {
-        entry: './src/js/callgraph.js',
+        entry: './src/js/index.jsx',
         output: {
             filename: 'callgraph.js',
             path: path.resolve(__dirname, '../resources/build')
@@ -17,6 +17,11 @@ module.exports = [
                 {
                     test: /\.(woff|woff2|eot|ttf|otf)$/i,
                     type: 'asset/inline'
+                },
+                {
+                    test: /\.(js|jsx)$/i,
+                    exclude: /node_modules/,
+                    use: 'babel-loader'
                 }
             ]
         },

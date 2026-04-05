@@ -27,6 +27,15 @@ tasks {
         targetCompatibility = "8"
     }
 
+    val buildFrontend by registering(Exec::class) {
+        workingDir("src/main/frontend")
+        commandLine("npm", "run", "build:prod")
+    }
+
+    processResources {
+        dependsOn(buildFrontend)
+    }
+
     runIde {
         // Get VM options from Gradle property if set
         val ideaVmOptions = project.findProperty("ideaVmOptions") as String?

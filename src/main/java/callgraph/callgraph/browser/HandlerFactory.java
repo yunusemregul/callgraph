@@ -1,5 +1,7 @@
 package callgraph.callgraph.browser;
 
+import callgraph.callgraph.browser.handlers.ExpandNodeHandler;
+import callgraph.callgraph.browser.handlers.UpdateSettingHandler;
 import callgraph.callgraph.browser.handlers.GenerateGraphHandler;
 import callgraph.callgraph.browser.handlers.GoToSourceHandler;
 import callgraph.callgraph.browser.handlers.OpenSettingsHandler;
@@ -17,6 +19,8 @@ public class HandlerFactory {
         handlers.add(new GoToSourceHandler(browser, project));
         handlers.add(new SaveAsHtmlHandler(browser, project));
         handlers.add(new OpenSettingsHandler(browser, project));
+        handlers.add(new ExpandNodeHandler(browser, project));
+        handlers.add(new UpdateSettingHandler(browser, project));
         return handlers;
     }
 }

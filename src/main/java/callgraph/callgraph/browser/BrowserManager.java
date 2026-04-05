@@ -70,6 +70,29 @@ public final class BrowserManager {
         executeJavaScript("updateNetwork(" + json + ")");
     }
 
+    public void addToNetwork(String json) {
+        executeJavaScript("addToNetwork(" + json + ")");
+    }
+
+    public void setLazyMode(boolean lazy) {
+        executeJavaScript("setLazyMode(" + lazy + ")");
+    }
+
+    public void initSettingsUI() {
+        CallGraphSettings s = CallGraphSettings.getInstance(project);
+        Color editorBg = EditorColorsManager.getInstance().getGlobalScheme().getDefaultBackground();
+        String ideBgColor = "#" + ColorUtil.toHex(editorBg);
+        String json = "{\"lazyExpansion\":" + s.isLazyExpansion()
+                + ",\"maxDepth\":" + s.getMaxDepth()
+                + ",\"graphDirection\":\"" + s.getGraphDirection() + "\""
+                + ",\"filterTestCode\":" + s.isFilterTestCode()
+                + ",\"backgroundType\":\"" + s.getBackgroundType() + "\""
+                + ",\"customBackgroundColor\":\"" + s.getCustomBackgroundColor() + "\""
+                + ",\"ideBackgroundColor\":\"" + ideBgColor + "\""
+                + "}";
+        executeJavaScript("setInitialSettings(" + json + ")");
+    }
+
     public void setGenerateMessage(String message) {
         executeJavaScript("setGenerateMessage('" + message + "')");
     }
@@ -139,6 +162,7 @@ public final class BrowserManager {
                 
                 // Apply settings after browser is initialized
                 applySettings();
+                initSettingsUI();
                 
                 if (System.getProperty("callgraph.devtools.open") != null) {
                     browser.openDevtools();
