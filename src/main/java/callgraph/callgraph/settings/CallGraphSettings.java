@@ -27,9 +27,9 @@ public class CallGraphSettings implements PersistentStateComponent<CallGraphSett
     private String backgroundType = BACKGROUND_TYPE_CUSTOM;
     private String customBackgroundColor = "#000000"; // Default to black
     private int maxDepth = 5;
-    private boolean filterTestCode = false;
+    private boolean filterTestCode = true;
     private String graphDirection = DIRECTION_CALLERS;
-    private boolean lazyExpansion = true;
+    private boolean lazyExpansion = false;
 
     public static CallGraphSettings getInstance(Project project) {
         return project.getService(CallGraphSettings.class);

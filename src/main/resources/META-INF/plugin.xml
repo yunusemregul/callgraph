@@ -36,6 +36,21 @@
 
     <!-- Change notes documentation -->
     <change-notes><![CDATA[
+    <h3>1.6</h3>
+    <ul>
+      <li>Major frontend overhaul: migrated to React with interactive physics-based graph using Force Graph</li>
+      <li>Added lazy expansion mode: click nodes to expand the call graph incrementally</li>
+      <li>Added satellite nodes to represent callee groups</li>
+      <li>Added Leva settings panel for runtime configuration</li>
+      <li>Improved lazy mode physics: velocity kick for new nodes, pinning existing nodes on expansion</li>
+      <li>Diamond-shaped satellite node styling</li>
+      <li>Lazy mode disables Max Depth setting (not applicable)</li>
+      <li>Fixed root node pinning in lazy mode</li>
+      <li>Fixed callee filter to exclude JDK and library methods</li>
+      <li>Added regeneration warning when settings change</li>
+      <li>Graph export filename now includes direction (callers/callees)</li>
+    </ul>
+
     <h3>1.5</h3>
     <ul>
       <li>Added node hiding functionality - click on a node to see the "Hide Node" button</li>
