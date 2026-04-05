@@ -5,7 +5,7 @@ plugins {
 }
 
 group = "callgraph"
-version = "1.6"
+version = "1.7"
 
 repositories {
     mavenCentral()
@@ -14,7 +14,7 @@ repositories {
 intellij {
     version = "2022.1"
     type = "IC"
-    plugins.set(listOf("com.intellij.java"))
+    plugins.set(listOf("com.intellij.java", "org.jetbrains.kotlin"))
 }
 
 dependencies {

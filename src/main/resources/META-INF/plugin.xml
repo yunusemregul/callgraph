@@ -14,12 +14,12 @@
          Simple HTML elements (text formatting, paragraphs, and lists) can be added inside of <![CDATA[ ]]> tag.
          Guidelines: https://plugins.jetbrains.com/docs/marketplace/plugin-overview-page.html#plugin-description -->
     <description><![CDATA[
-    <p><strong>CallGraph</strong> visualizes caller–callee relationships for any Java method and lets you jump straight to definitions or call sites.</p>
+    <p><strong>CallGraph</strong> visualizes caller–callee relationships for any Java or Kotlin method and lets you jump straight to definitions or call sites. Supports pure Java, pure Kotlin, and mixed Java/Kotlin projects.</p>
 
     <h3>How to use</h3>
     <ol>
       <li><strong>Right-click on a method</strong> and select <em>Generate Call Graph</em> from the context menu</li>
-      <li><strong>Open CallGraph tool window</strong> (View → Tool Windows → CallGraph), place your caret on any Java method, and click the Generate button</li>
+      <li><strong>Open CallGraph tool window</strong> (View → Tool Windows → CallGraph), place your caret on any Java or Kotlin method, and click the Generate button</li>
       <li><strong>Use keyboard shortcut</strong> Alt+Shift+E (Option+Shift+E on macOS) while your caret is on a method</li>
       <li><strong>Explore the graph:</strong> Click nodes to open methods, click edges to jump to exact calling lines</li>
       <li><strong>Hide unwanted nodes:</strong> Click on a node and use the "Hide Node" button to clean up the visualization</li>
@@ -27,6 +27,7 @@
 
     <h3>Key features</h3>
     <ul>
+      <li>Java and Kotlin support, including cross-language call detection</li>
       <li>Interactive call graph visualization with pan and zoom</li>
       <li>Direct navigation to method definitions and call sites</li>
       <li>Export diagrams as standalone HTML files</li>
@@ -36,6 +37,12 @@
 
     <!-- Change notes documentation -->
     <change-notes><![CDATA[
+    <h3>1.7</h3>
+    <ul>
+      <li>Added Kotlin support: generate call graphs for Kotlin methods and functions</li>
+      <li>Added cross-language support: Java calling Kotlin and Kotlin calling Java are both tracked</li>
+    </ul>
+
     <h3>1.6</h3>
     <ul>
       <li>Major frontend overhaul: migrated to React with interactive physics-based graph using Force Graph</li>
@@ -89,6 +96,7 @@
          Read more: https://plugins.jetbrains.com/docs/intellij/plugin-compatibility.html -->
     <depends>com.intellij.modules.platform</depends>
     <depends>com.intellij.modules.java</depends>
+    <depends>org.jetbrains.kotlin</depends>
 
     <!-- Define the minimum and maximum build numbers for compatibility -->
     <idea-version since-build="211"/>

@@ -6,6 +6,8 @@ import com.intellij.openapi.project.DumbService;
 import com.intellij.openapi.project.Project;
 import com.intellij.psi.*;
 import com.intellij.psi.util.PsiTreeUtil;
+import org.jetbrains.kotlin.asJava.LightClassUtil;
+import org.jetbrains.kotlin.psi.KtNamedFunction;
 
 import java.io.*;
 import java.util.stream.Collectors;
@@ -67,6 +69,12 @@ public final class Utils {
         PsiElement element = psiFile.findElementAt(offset);
 
         if (element != null) {
+            // Check Kotlin function first
+            KtNamedFunction ktFunction = PsiTreeUtil.getParentOfType(element, KtNamedFunction.class);
+            if (ktFunction != null) {
+                return LightClassUtil.INSTANCE.getLightClassMethod(ktFunction);
+            }
+
             if (element.getParent() instanceof PsiMethod) {
                 return (PsiMethod) element.getParent();
             } else if (element.getParent() instanceof PsiReference) {

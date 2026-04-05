@@ -10,11 +10,18 @@ import com.intellij.psi.*;
 import com.intellij.psi.search.searches.ReferencesSearch;
 import com.intellij.psi.util.PsiTreeUtil;
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
+import org.jetbrains.kotlin.asJava.LightClassUtil;
+import org.jetbrains.kotlin.psi.KtCallExpression;
+import org.jetbrains.kotlin.psi.KtExpression;
+import org.jetbrains.kotlin.psi.KtNamedFunction;
 import org.json.simple.JSONArray;
 import org.json.simple.JSONObject;
 
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
+import java.util.List;
 
 @SuppressWarnings("unchecked")
 @Service(Service.Level.PROJECT)
@@ -141,7 +148,7 @@ public final class CallGraphGenerator {
 
         for (PsiReference reference : allReferences) {
             PsiElement callReference = reference.getElement();
-            PsiMethod caller = PsiTreeUtil.getParentOfType(callReference, PsiMethod.class);
+            PsiMethod caller = resolveCallerMethod(callReference);
 
             if (references.containsKey(callReference.hashCode())) continue;
             if (caller == null || !caller.getProject().equals(method.getProject())) continue;
@@ -167,16 +174,14 @@ public final class CallGraphGenerator {
 
     private void findAndAddCallees(PsiMethod method, int depth, CallGraphSettings settings) {
         if (depth > settings.getMaxDepth()) return;
-        if (method.getBody() == null) return;
 
-        Collection<PsiMethodCallExpression> calls = PsiTreeUtil.findChildrenOfType(method.getBody(), PsiMethodCallExpression.class);
-
-        for (PsiMethodCallExpression call : calls) {
-            PsiMethod callee = call.resolveMethod();
-            if (callee == null || callee.getContainingClass() == null) continue;
+        for (CallSite site : collectCalleeSites(method)) {
+            PsiMethod callee = site.callee;
+            PsiElement callExpr = site.callExpr;
+            if (callee.getContainingClass() == null) continue;
             if (!isInProjectSource(callee)) continue;
             if (settings.isFilterTestCode() && isTestCode(callee)) continue;
-            if (references.containsKey(call.hashCode())) continue;
+            if (references.containsKey(callExpr.hashCode())) continue;
 
             boolean nodeNotExists = !references.containsKey(callee.hashCode());
             if (nodeNotExists) {
@@ -186,8 +191,8 @@ public final class CallGraphGenerator {
                 createGroupIfNotExists(callee);
             }
 
-            references.put(call.hashCode(), call);
-            edges.add(createCalleeEdge(method, call, callee));
+            references.put(callExpr.hashCode(), callExpr);
+            edges.add(createCalleeEdge(method, callExpr, callee));
 
             if (nodeNotExists) {
                 findAndAddCallees(callee, depth + 1, settings);
@@ -201,7 +206,7 @@ public final class CallGraphGenerator {
 
         for (PsiReference reference : allReferences) {
             PsiElement callReference = reference.getElement();
-            PsiMethod caller = PsiTreeUtil.getParentOfType(callReference, PsiMethod.class);
+            PsiMethod caller = resolveCallerMethod(callReference);
 
             if (references.containsKey(callReference.hashCode())) continue;
             if (caller == null || !caller.getProject().equals(method.getProject())) continue;
@@ -222,16 +227,13 @@ public final class CallGraphGenerator {
 
     private void findDirectCallees(PsiMethod method, int level, CallGraphSettings settings,
                                     JSONArray newNodes, JSONArray newEdges, JSONObject newGroups) {
-        if (method.getBody() == null) return;
-
-        Collection<PsiMethodCallExpression> calls = PsiTreeUtil.findChildrenOfType(method.getBody(), PsiMethodCallExpression.class);
-
-        for (PsiMethodCallExpression call : calls) {
-            PsiMethod callee = call.resolveMethod();
-            if (callee == null || callee.getContainingClass() == null) continue;
+        for (CallSite site : collectCalleeSites(method)) {
+            PsiMethod callee = site.callee;
+            PsiElement callExpr = site.callExpr;
+            if (callee.getContainingClass() == null) continue;
             if (!isInProjectSource(callee)) continue;
             if (settings.isFilterTestCode() && isTestCode(callee)) continue;
-            if (references.containsKey(call.hashCode())) continue;
+            if (references.containsKey(callExpr.hashCode())) continue;
 
             if (!references.containsKey(callee.hashCode())) {
                 references.put(callee.hashCode(), callee);
@@ -240,8 +242,8 @@ public final class CallGraphGenerator {
                 addGroupIfNotExists(callee, newGroups);
             }
 
-            references.put(call.hashCode(), call);
-            newEdges.add(createCalleeEdge(method, call, callee));
+            references.put(callExpr.hashCode(), callExpr);
+            newEdges.add(createCalleeEdge(method, callExpr, callee));
         }
     }
 
@@ -279,15 +281,15 @@ public final class CallGraphGenerator {
     }
 
     @NotNull
-    private JSONObject createCalleeEdge(PsiMethod method, PsiMethodCallExpression call, PsiMethod callee) {
+    private JSONObject createCalleeEdge(PsiMethod method, PsiElement callExpr, PsiMethod callee) {
         JSONObject edge = new JSONObject();
-        edge.put("id", call.hashCode());
+        edge.put("id", callExpr.hashCode());
         edge.put("from", method.hashCode());
         edge.put("to", callee.hashCode());
 
-        PsiFile file = call.getContainingFile();
+        PsiFile file = callExpr.getContainingFile();
         Document document = file.getViewProvider().getDocument();
-        int lineNumber = document.getLineNumber(call.getTextOffset()) + 1;
+        int lineNumber = document.getLineNumber(callExpr.getTextOffset()) + 1;
         edge.put("label", ":" + lineNumber);
 
         JSONObject group = getGroup(method);
@@ -312,8 +314,110 @@ public final class CallGraphGenerator {
 
         node.put("label", label);
         node.put("hasCallers", !collectCallerReferences(method).isEmpty());
-        node.put("hasCallees", method.getBody() != null && !PsiTreeUtil.findChildrenOfType(method.getBody(), PsiMethodCallExpression.class).isEmpty());
+        node.put("hasCallees", hasCallees(method));
         return node;
+    }
+
+    /** Simple holder for a call site: the call expression and the resolved callee. */
+    private static class CallSite {
+        final PsiElement callExpr;
+        final PsiMethod callee;
+        CallSite(PsiElement callExpr, PsiMethod callee) {
+            this.callExpr = callExpr;
+            this.callee = callee;
+        }
+    }
+
+    /**
+     * Collects all call sites (call expression + resolved callee) within the given method body.
+     * Handles both Java ({@link PsiMethodCallExpression}) and Kotlin ({@link KtCallExpression}).
+     */
+    @NotNull
+    private List<CallSite> collectCalleeSites(PsiMethod method) {
+        List<CallSite> sites = new ArrayList<>();
+
+        // Check Kotlin first: KtLightMethod.getBody() may return a non-null synthetic body,
+        // so we must not rely on getBody() == null to detect Kotlin methods.
+        KtNamedFunction ktFunction = getKotlinOrigin(method);
+        if (ktFunction != null) {
+            for (KtCallExpression call : PsiTreeUtil.findChildrenOfType(ktFunction, KtCallExpression.class)) {
+                PsiMethod callee = resolveKtCall(call);
+                if (callee != null) sites.add(new CallSite(call, callee));
+            }
+            return sites;
+        }
+
+        // Java method body
+        if (method.getBody() != null) {
+            for (PsiMethodCallExpression call : PsiTreeUtil.findChildrenOfType(method.getBody(), PsiMethodCallExpression.class)) {
+                PsiMethod callee = call.resolveMethod();
+                if (callee != null) sites.add(new CallSite(call, callee));
+            }
+        }
+
+        return sites;
+    }
+
+    private boolean hasCallees(PsiMethod method) {
+        KtNamedFunction ktFunction = getKotlinOrigin(method);
+        if (ktFunction != null) {
+            return !PsiTreeUtil.findChildrenOfType(ktFunction, KtCallExpression.class).isEmpty();
+        }
+        return method.getBody() != null && !PsiTreeUtil.findChildrenOfType(method.getBody(), PsiMethodCallExpression.class).isEmpty();
+    }
+
+    /**
+     * Given a call-site reference element (from {@link ReferencesSearch}), returns the containing
+     * method — works for both Java ({@link PsiMethod} ancestor) and Kotlin ({@link KtNamedFunction}
+     * ancestor, converted to its light class method).
+     */
+    @Nullable
+    private static PsiMethod resolveCallerMethod(PsiElement callReference) {
+        // Java: the reference lives directly inside a PsiMethod
+        PsiMethod javaMethod = PsiTreeUtil.getParentOfType(callReference, PsiMethod.class);
+        if (javaMethod != null) return javaMethod;
+
+        // Kotlin: the reference lives inside a KtNamedFunction; get its light-class PsiMethod
+        KtNamedFunction ktFunction = PsiTreeUtil.getParentOfType(callReference, KtNamedFunction.class);
+        if (ktFunction != null) {
+            PsiElement nav = ktFunction.getNavigationElement();
+            if (nav instanceof KtNamedFunction) {
+                return LightClassUtil.INSTANCE.getLightClassMethod((KtNamedFunction) nav);
+            }
+            return LightClassUtil.INSTANCE.getLightClassMethod(ktFunction);
+        }
+        return null;
+    }
+
+    /** Returns the Kotlin source function for a light method, or null if this is a pure Java method. */
+    @Nullable
+    private static KtNamedFunction getKotlinOrigin(PsiMethod method) {
+        PsiElement nav = method.getNavigationElement();
+        if (nav instanceof KtNamedFunction) {
+            return (KtNamedFunction) nav;
+        }
+        return null;
+    }
+
+    /**
+     * Resolves a Kotlin call expression to a {@link PsiMethod}.
+     * Handles both Kotlin-declared functions (converting them via light classes) and
+     * Java methods called from Kotlin.
+     */
+    @Nullable
+    private static PsiMethod resolveKtCall(KtCallExpression call) {
+        KtExpression calleeExpr = call.getCalleeExpression();
+        if (calleeExpr == null) return null;
+        // Kotlin registers references via PsiReferenceContributor, so getReference() (singular)
+        // returns null — we must use getReferences() (plural) to get the Kotlin-contributed reference.
+        for (PsiReference ref : calleeExpr.getReferences()) {
+            PsiElement resolved = ref.resolve();
+            if (resolved instanceof PsiMethod) return (PsiMethod) resolved;
+            if (resolved instanceof KtNamedFunction) {
+                return LightClassUtil.INSTANCE.getLightClassMethod((KtNamedFunction) resolved);
+            }
+        }
+        return null;
     }
 
     private PsiAnnotation getControllerAnnotation(PsiJvmModifiersOwner element) {
