@@ -41,6 +41,10 @@
     <ul>
       <li>Added Kotlin support: generate call graphs for Kotlin methods and functions</li>
       <li>Added cross-language support: Java calling Kotlin and Kotlin calling Java are both tracked</li>
+      <li>Added configurable limits to prevent hangs on large codebases: Max Callers Per Node (default 10) and Max Total Nodes (default 150)</li>
+      <li>Truncated nodes keep a &quot;+ more callers&quot; button so additional callers can be loaded in batches</li>
+      <li>Improved satellite node appearance: pill-shaped buttons with hover highlight and tooltips</li>
+      <li>Increased default Max Depth from 5 to 8</li>
     </ul>
 
     <h3>1.6</h3>

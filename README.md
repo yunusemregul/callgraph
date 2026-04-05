@@ -135,12 +135,38 @@ Contributions are welcome! If you'd like to contribute, please:
 
 ## Version History
 
+### 1.7
+- Added Kotlin support: generate call graphs for Kotlin methods and functions
+- Added cross-language support: Java calling Kotlin and Kotlin calling Java are both tracked
+- Added configurable limits to prevent hangs on large codebases: Max Callers Per Node (default 10) and Max Total Nodes (default 150)
+- Truncated nodes keep a "+ more callers" button so additional callers can be loaded in batches
+- Improved satellite node appearance: pill-shaped buttons with hover highlight and tooltips
+- Increased default Max Depth from 5 to 8
+
+### 1.6
+- Major frontend overhaul: migrated to React with interactive physics-based graph
+- Added lazy expansion mode: click nodes to expand the call graph incrementally
+- Added Leva settings panel for runtime configuration
+- Improved lazy mode physics: velocity kick for new nodes, pinning existing nodes on expansion
+- Lazy mode disables Max Depth setting (not applicable)
+- Fixed root node pinning in lazy mode
+- Fixed callee filter to exclude JDK and library methods
+- Added regeneration warning when settings change
+- Graph export filename now includes direction (callers/callees)
+
+### 1.5
+- Added node hiding functionality — click on a node to see the "Hide Node" button
+- Added "Show All" button to restore all hidden nodes
+
+### 1.4
+- Added proper handling for IDE indexing state (fixed IndexNotReadyException)
+
 ### 1.3
 - Added options menu for customizing graph background color
 - Fixed crash when opening new projects with CallGraph window open
 - Fixed multi-project support to respect active editor context
 - Added right-click context menu option to generate call graphs
-- Added keyboard shortcut (Alt+Shift+E) for quick graph generation
+- Added keyboard shortcut (Alt+Shift+E, Option+Shift+E on macOS) for quick graph generation
 
 ### 1.1 & 1.2
 - Improved plugin description for better clarity
