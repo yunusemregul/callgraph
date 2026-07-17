@@ -51,6 +51,7 @@
     <ul>
       <li>Added recursive caller and callee expansion controls for every expandable method</li>
       <li>Fixed missing graph relationships caused by colliding PSI element hash codes</li>
+      <li>Fixed node clicks navigating to a connected edge instead of the method definition</li>
       <li>Improved expansion availability detection to respect filtered callers and callees</li>
       <li>Added Java, mixed Java/Kotlin, and large-project integration fixtures with automated CI verification</li>
     </ul>

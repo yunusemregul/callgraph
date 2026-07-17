@@ -4,9 +4,6 @@ on:
   push:
     branches:
       - main
-    paths:
-      - build.gradle.kts
-      - .github/workflows/release.yml
   workflow_dispatch:
 
 permissions:
@@ -42,22 +39,13 @@ jobs:
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
 
-          if git ls-remote --exit-code --tags origin "refs/tags/$tag" >/dev/null 2>&1; then
-            echo "publish=false" >> "$GITHUB_OUTPUT"
-            echo "Tag $tag already exists; nothing to publish."
-          else
-            echo "publish=true" >> "$GITHUB_OUTPUT"
-          fi
-
       - name: Set up JDK 17
-        if: steps.version.outputs.publish == 'true'
         uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: "17"
 
       - name: Set up Node.js 20
-        if: steps.version.outputs.publish == 'true'
         uses: actions/setup-node@v6
         with:
           node-version: "20"
@@ -65,24 +53,19 @@ jobs:
           cache-dependency-path: src/main/frontend/package-lock.json
 
       - name: Set up Gradle
-        if: steps.version.outputs.publish == 'true'
         uses: gradle/actions/setup-gradle@v6
 
       - name: Install frontend dependencies
-        if: steps.version.outputs.publish == 'true'
         working-directory: src/main/frontend
         run: npm ci
 
       - name: Verify release
-        if: steps.version.outputs.publish == 'true'
         run: xvfb-run --auto-servernum ./verify-all
 
       - name: Build plugin ZIP
-        if: steps.version.outputs.publish == 'true'
         run: ./gradlew buildPlugin --console=plain
 
       - name: Locate plugin ZIP
-        if: steps.version.outputs.publish == 'true'
         id: artifact
         shell: bash
         env:
@@ -95,16 +78,34 @@ jobs:
           fi
           echo "path=$artifact" >> "$GITHUB_OUTPUT"
 
-      - name: Create tag and GitHub release
-        if: steps.version.outputs.publish == 'true'
+      - name: Publish or refresh GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ steps.version.outputs.tag }}
           VERSION: ${{ steps.version.outputs.version }}
           ARTIFACT: ${{ steps.artifact.outputs.path }}
         run: |
-          gh release create "$TAG" "$ARTIFACT#CallGraph $VERSION plugin ZIP" \
-            --target "$GITHUB_SHA" \
-            --title "$TAG" \
-            --generate-notes \
-            --latest
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag --force "$TAG" "$GITHUB_SHA"
+          git push --force origin "refs/tags/$TAG"
+
+          gh api --method POST "repos/$GITHUB_REPOSITORY/releases/generate-notes" \
+            -f tag_name="$TAG" \
+            -f target_commitish="$GITHUB_SHA" \
+            --jq '.body' > release-notes.md
+
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" "$ARTIFACT#CallGraph $VERSION plugin ZIP" --clobber
+            gh release edit "$TAG" \
+              --target "$GITHUB_SHA" \
+              --title "$TAG" \
+              --notes-file release-notes.md \
+              --latest
+          else
+            gh release create "$TAG" "$ARTIFACT#CallGraph $VERSION plugin ZIP" \
+              --verify-tag \
+              --title "$TAG" \
+              --notes-file release-notes.md \
+              --latest
+          fi

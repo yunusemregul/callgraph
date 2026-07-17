@@ -138,7 +138,7 @@ The same command runs automatically in GitHub Actions for every push and pull re
 
 ## Releases
 
-Changing the project version in `build.gradle.kts` on `main` automatically runs the full verification suite, builds the installable plugin ZIP, creates a `callgraph-<version>` tag, and publishes a GitHub release with generated release notes. Existing tags are left unchanged, so rerunning the workflow is safe.
+Every push to `main` automatically runs the full verification suite and builds the installable plugin ZIP. If the current version already has a release, its `callgraph-<version>` tag, plugin ZIP, and generated notes are refreshed from the latest commit. Changing the version in `build.gradle.kts` creates a new release instead.
 
 The release workflow can also be started manually from the GitHub Actions page. It uses the repository-provided `GITHUB_TOKEN`, so no release secret is required.
 
@@ -156,6 +156,7 @@ Contributions are welcome! If you'd like to contribute, please:
 ### 1.8
 - Added recursive caller and callee expansion controls for every expandable method
 - Fixed missing graph relationships caused by colliding PSI element hash codes
+- Fixed node clicks navigating to a connected edge instead of the method definition
 - Added Java, mixed Java/Kotlin, and large-project integration fixtures
 - Added one-command local verification and GitHub Actions coverage
 

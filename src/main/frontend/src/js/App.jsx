@@ -3,6 +3,7 @@ import vis from 'vis-network/standalone/umd/vis-network.min.js'
 import { useControls, Leva, folder } from 'leva'
 import visOptions from './vis-options'
 import { getSatelliteVisibility } from './satellite-visibility.cjs'
+import { getGraphClickAction } from './graph-click-action.cjs'
 import '@fortawesome/fontawesome-free/css/all.min.css'
 import './App.css'
 
@@ -248,21 +249,18 @@ export default function App() {
         // ── Network events ────────────────────────────────────────────────────
 
         n.on('click', (params) => {
-            if (params.nodes.length === 1) {
-                const nodeId = params.nodes[0]
-                if (typeof nodeId === 'string' && nodeId.startsWith('__')) {
-                    handleSatelliteClick(nodeId)
-                    return
-                }
-                setSelectedNodeId(nodeId)
-                window.JavaBridge.goToSource(nodeId)
-            } else {
-                setSelectedNodeId(null)
+            const action = getGraphClickAction(params)
+            if (action.type === 'satellite') {
+                handleSatelliteClick(action.id)
+                return
             }
-            if (params.edges.length === 1) {
-                const edgeId = params.edges[0]
-                if (typeof edgeId !== 'string' || !edgeId.startsWith('__')) window.JavaBridge.goToSource(edgeId)
+            if (action.type === 'node') {
+                setSelectedNodeId(action.id)
+                window.JavaBridge.goToSource(action.id)
+                return
             }
+            setSelectedNodeId(null)
+            if (action.type === 'edge') window.JavaBridge.goToSource(action.id)
         })
 
         n.on('stabilizationProgress', (params) => {
