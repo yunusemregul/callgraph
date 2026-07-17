@@ -1,26 +1,30 @@
-name: Verify
+name: Verify and release
 
 on:
   push:
+    branches:
+      - main
   pull_request:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
-  group: verify-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  group: callgraph-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
   verify:
-    name: Fixtures and graph integration
+    name: Test, build, and publish
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
 
     steps:
       - name: Check out repository
         uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
 
       - name: Set up JDK 17
         uses: actions/setup-java@v5
@@ -44,3 +48,68 @@ jobs:
 
       - name: Run all verification checks
         run: xvfb-run --auto-servernum ./verify-all
+
+      - name: Read release version
+        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        id: version
+        shell: bash
+        run: |
+          version=$(sed -nE 's/^version = "([^"]+)"$/\1/p' build.gradle.kts)
+          if [[ ! "$version" =~ ^[0-9]+\.[0-9]+(\.[0-9]+)?([.-][0-9A-Za-z.-]+)?$ ]]; then
+            echo "Invalid or missing plugin version: $version" >&2
+            exit 1
+          fi
+
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "tag=callgraph-$version" >> "$GITHUB_OUTPUT"
+
+      - name: Build plugin ZIP
+        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        run: ./gradlew buildPlugin --console=plain
+
+      - name: Locate plugin ZIP
+        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        id: artifact
+        shell: bash
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          artifact="build/distributions/callgraph-$VERSION.zip"
+          if [[ ! -f "$artifact" ]]; then
+            echo "Expected release artifact was not generated: $artifact" >&2
+            exit 1
+          fi
+          echo "path=$artifact" >> "$GITHUB_OUTPUT"
+
+      - name: Publish or refresh GitHub release
+        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.version.outputs.tag }}
+          VERSION: ${{ steps.version.outputs.version }}
+          ARTIFACT: ${{ steps.artifact.outputs.path }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag --force "$TAG" "$GITHUB_SHA"
+          git push --force origin "refs/tags/$TAG"
+
+          gh api --method POST "repos/$GITHUB_REPOSITORY/releases/generate-notes" \
+            -f tag_name="$TAG" \
+            -f target_commitish="$GITHUB_SHA" \
+            --jq '.body' > release-notes.md
+
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" "$ARTIFACT#CallGraph $VERSION plugin ZIP" --clobber
+            gh release edit "$TAG" \
+              --target "$GITHUB_SHA" \
+              --title "$TAG" \
+              --notes-file release-notes.md \
+              --latest
+          else
+            gh release create "$TAG" "$ARTIFACT#CallGraph $VERSION plugin ZIP" \
+              --verify-tag \
+              --title "$TAG" \
+              --notes-file release-notes.md \
+              --latest
+          fi

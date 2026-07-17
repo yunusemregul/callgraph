@@ -134,13 +134,13 @@ Run every fixture compilation, frontend behavior test, and IntelliJ graph integr
 ./verify-all
 ```
 
-The same command runs automatically in GitHub Actions for every push and pull request.
+The same command runs automatically in one GitHub Actions workflow for pull requests and pushes to `main`.
 
 ## Releases
 
-Every push to `main` automatically runs the full verification suite and builds the installable plugin ZIP. If the current version already has a release, its `callgraph-<version>` tag, plugin ZIP, and generated notes are refreshed from the latest commit. Changing the version in `build.gradle.kts` creates a new release instead.
+After that single verification job succeeds on `main`, it builds the installable plugin ZIP. If the current version already has a release, its `callgraph-<version>` tag, plugin ZIP, and generated notes are refreshed from the latest commit. Changing the version in `build.gradle.kts` creates a new release instead.
 
-The release workflow can also be started manually from the GitHub Actions page. It uses the repository-provided `GITHUB_TOKEN`, so no release secret is required.
+The combined verification and release workflow can also be started manually from the GitHub Actions page. It uses the repository-provided `GITHUB_TOKEN`, so no release secret is required.
 
 ## Contributing
 
