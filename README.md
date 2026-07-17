@@ -136,6 +136,12 @@ Run every fixture compilation, frontend behavior test, and IntelliJ graph integr
 
 The same command runs automatically in GitHub Actions for every push and pull request.
 
+## Releases
+
+Changing the project version in `build.gradle.kts` on `main` automatically runs the full verification suite, builds the installable plugin ZIP, creates a `callgraph-<version>` tag, and publishes a GitHub release with generated release notes. Existing tags are left unchanged, so rerunning the workflow is safe.
+
+The release workflow can also be started manually from the GitHub Actions page. It uses the repository-provided `GITHUB_TOKEN`, so no release secret is required.
+
 ## Contributing
 
 Contributions are welcome! If you'd like to contribute, please:
