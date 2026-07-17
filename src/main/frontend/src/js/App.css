@@ -28,12 +28,19 @@ html, body, #root {
 /* ── Navbar ──────────────────────────────────────────────────────────────── */
 
 .navbar {
+    --action-column-width: 152px;
     position: absolute;
     top: 12px;
     left: 12px;
     display: flex;
     flex-direction: column;
+    align-items: flex-start;
     gap: 2px;
+}
+
+.navbar > .navbutton {
+    width: var(--action-column-width);
+    box-sizing: border-box;
 }
 
 .navbar-right {
@@ -75,6 +82,9 @@ html, body, #root {
 }
 
 .generate-row .navbutton {
+    width: var(--action-column-width);
+    flex: 0 0 var(--action-column-width);
+    box-sizing: border-box;
     color: #ccc;
     background: #252525;
     border-color: #444;
@@ -112,6 +122,10 @@ html, body, #root {
     display: flex;
     align-items: center;
     white-space: nowrap;
+    max-width: calc(100vw - var(--action-column-width) - 36px);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    box-sizing: border-box;
     border-radius: 0 2px 2px 0;
 }
 
@@ -185,4 +199,3 @@ html, body, #root {
     left: 12px !important;
     right: auto !important;
 }
-
