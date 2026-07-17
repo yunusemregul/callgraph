@@ -1,0 +1,141 @@
+#!/usr/bin/env node
+
+const fs = require('node:fs')
+const path = require('node:path')
+const { spawnSync } = require('node:child_process')
+
+const projectRoot = __dirname
+const startedAt = Date.now()
+const useColor = process.stdout.isTTY && !process.env.NO_COLOR
+
+const color = {
+    green: value => useColor ? `\u001b[32m${value}\u001b[0m` : value,
+    red: value => useColor ? `\u001b[31m${value}\u001b[0m` : value,
+    cyan: value => useColor ? `\u001b[36m${value}\u001b[0m` : value,
+    dim: value => useColor ? `\u001b[2m${value}\u001b[0m` : value,
+}
+
+const commands = [
+    {
+        key: 'java-fixture',
+        label: 'Java fixture compiles',
+        args: ['./gradlew', '-p', 'test-projects/java-callgraph-fixture', 'clean', 'test', '--console=plain'],
+    },
+    {
+        key: 'mixed-fixture',
+        label: 'Mixed Java/Kotlin fixture compiles',
+        args: ['./gradlew', '-p', 'test-projects/mixed-callgraph-fixture', 'clean', 'test', '--console=plain'],
+    },
+    {
+        key: 'big-fixture',
+        label: 'Big fixture generates and compiles',
+        args: ['./gradlew', '-p', 'test-projects/big-callgraph-fixture', 'clean', 'test', '--console=plain'],
+    },
+    {
+        key: 'plugin-tests',
+        label: 'Plugin, frontend, and IntelliJ integration tests',
+        args: ['./gradlew', 'test', '--console=plain'],
+    },
+]
+
+function elapsed(milliseconds) {
+    return `${(milliseconds / 1000).toFixed(1)}s`
+}
+
+function tail(text, lineCount = 50) {
+    return text.trim().split(/\r?\n/).slice(-lineCount).join('\n')
+}
+
+function xmlDecode(value) {
+    return value
+        .replaceAll('&quot;', '"')
+        .replaceAll('&apos;', "'")
+        .replaceAll('&lt;', '<')
+        .replaceAll('&gt;', '>')
+        .replaceAll('&amp;', '&')
+        .replaceAll('&#10;', ' ')
+}
+
+console.log(color.cyan('\nCallGraph verification'))
+console.log(color.dim('────────────────────────────────────────────────────────'))
+
+const results = []
+for (const command of commands) {
+    const commandStartedAt = Date.now()
+    console.log(`→ ${command.label}...`)
+
+    const [executable, ...args] = command.args
+    const result = spawnSync(executable, args, {
+        cwd: projectRoot,
+        encoding: 'utf8',
+        env: { ...process.env, TERM: 'dumb' },
+        maxBuffer: 25 * 1024 * 1024,
+    })
+
+    const output = `${result.stdout || ''}\n${result.stderr || ''}`
+    const passed = result.status === 0
+    results.push({ ...command, passed, output })
+
+    if (passed) {
+        console.log(`${color.green('✓')} ${command.label} ${color.dim(`(${elapsed(Date.now() - commandStartedAt)})`)}`)
+    } else {
+        console.log(`${color.red('✗')} ${command.label} ${color.dim(`(${elapsed(Date.now() - commandStartedAt)})`)}`)
+        console.log(color.red(tail(output)))
+    }
+}
+
+const pluginResult = results.find(result => result.key === 'plugin-tests')
+let detailedChecks = 0
+
+if (pluginResult && pluginResult.passed) {
+    const frontendTests = Array.from(pluginResult.output.matchAll(/# Subtest: (.+)/g), match => match[1].trim())
+    if (frontendTests.length > 0) {
+        console.log(color.cyan('\nFrontend behavior'))
+        for (const testName of frontendTests) {
+            console.log(`  ${color.green('✓')} ${testName}`)
+            detailedChecks++
+        }
+    }
+
+    const testResultsDirectory = path.join(projectRoot, 'build', 'test-results', 'test')
+    if (fs.existsSync(testResultsDirectory)) {
+        const resultFiles = fs.readdirSync(testResultsDirectory)
+            .filter(fileName => fileName.startsWith('TEST-') && fileName.endsWith('.xml'))
+            .sort()
+
+        if (resultFiles.length > 0) console.log(color.cyan('\nIntelliJ graph integration'))
+
+        for (const fileName of resultFiles) {
+            const xml = fs.readFileSync(path.join(testResultsDirectory, fileName), 'utf8')
+            const suiteName = xmlDecode((xml.match(/<testsuite name="([^"]+)"/) || [])[1] || fileName)
+            const shortSuiteName = suiteName.substring(suiteName.lastIndexOf('.') + 1)
+            const tests = Number((xml.match(/<testsuite[^>]* tests="(\d+)"/) || [])[1] || 0)
+            const failures = Number((xml.match(/<testsuite[^>]* failures="(\d+)"/) || [])[1] || 0)
+            const errors = Number((xml.match(/<testsuite[^>]* errors="(\d+)"/) || [])[1] || 0)
+            const suitePassed = failures === 0 && errors === 0
+
+            console.log(`  ${suitePassed ? color.green('✓') : color.red('✗')} ${shortSuiteName} ${color.dim(`(${tests} tests)`)}`)
+
+            const testCases = Array.from(xml.matchAll(/<testcase name="([^"]+)"/g), match => xmlDecode(match[1]))
+            if (suitePassed) {
+                for (const testCase of testCases) {
+                    console.log(`      ${color.green('✓')} ${testCase}`)
+                    detailedChecks++
+                }
+            }
+        }
+    }
+}
+
+const failedCommands = results.filter(result => !result.passed)
+const projectChecks = results.filter(result => result.key !== 'plugin-tests').length
+const totalChecks = projectChecks + detailedChecks
+
+console.log(color.dim('\n────────────────────────────────────────────────────────'))
+if (failedCommands.length === 0) {
+    console.log(color.green(`✓ ALL ${totalChecks} CHECKS PASSED in ${elapsed(Date.now() - startedAt)}\n`))
+    process.exit(0)
+}
+
+console.log(color.red(`✗ ${failedCommands.length} verification group(s) failed in ${elapsed(Date.now() - startedAt)}\n`))
+process.exit(1)

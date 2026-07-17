@@ -5,7 +5,7 @@ plugins {
 }
 
 group = "callgraph"
-version = "1.7"
+version = "1.8"
 
 repositories {
     mavenCentral()
@@ -30,6 +30,20 @@ tasks {
     val buildFrontend by registering(Exec::class) {
         workingDir("src/main/frontend")
         commandLine("npm", "run", "build:prod")
+    }
+
+    val testFrontend by registering(Exec::class) {
+        workingDir("src/main/frontend")
+        commandLine("npm", "test")
+    }
+
+    val generateBigFixture by registering(Exec::class) {
+        workingDir("test-projects/big-callgraph-fixture")
+        commandLine("node", "generate-fixture.cjs")
+    }
+
+    named("test") {
+        dependsOn(testFrontend, generateBigFixture)
     }
 
     processResources {

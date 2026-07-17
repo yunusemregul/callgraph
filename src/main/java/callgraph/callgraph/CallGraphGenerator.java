@@ -1,6 +1,5 @@
 package callgraph.callgraph;
 
-import callgraph.callgraph.browser.BrowserManager;
 import callgraph.callgraph.settings.CallGraphSettings;
 import com.intellij.openapi.components.Service;
 import com.intellij.openapi.editor.Document;
@@ -9,6 +8,7 @@ import com.intellij.openapi.roots.ProjectFileIndex;
 import com.intellij.psi.*;
 import com.intellij.psi.search.searches.ReferencesSearch;
 import com.intellij.psi.util.PsiTreeUtil;
+import com.intellij.util.Query;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.jetbrains.kotlin.asJava.LightClassUtil;
@@ -33,9 +33,13 @@ public final class CallGraphGenerator {
     private final JSONArray edges;
     private final JSONObject groups;
     private final HashMap<Integer, PsiElement> references = new HashMap<>();
+    private final HashMap<PsiElement, Integer> referenceIds = new HashMap<>();
     private final HashMap<Integer, Integer> nodeLevels = new HashMap<>();
+    private final HashMap<Integer, Boolean> callerAvailability = new HashMap<>();
+    private final HashMap<Integer, Boolean> calleeAvailability = new HashMap<>();
     private final Set<Integer> truncatedNodes = new HashSet<>();
     private PsiMethod lastGeneratedMethod;
+    private int nextReferenceId = 1;
 
     public CallGraphGenerator(Project project) {
         this.project = project;
@@ -49,7 +53,6 @@ public final class CallGraphGenerator {
     }
 
     public String generate(PsiMethod mainMethod) {
-        BrowserManager.getInstance(project).showMessage("Clearing the graph...");
         clear();
 
         lastGeneratedMethod = mainMethod;
@@ -58,18 +61,17 @@ public final class CallGraphGenerator {
             return getJson();
         }
 
-        references.put(mainMethod.hashCode(), mainMethod);
-        nodeLevels.put(mainMethod.hashCode(), 0);
+        int mainMethodId = referenceId(mainMethod);
+        nodeLevels.put(mainMethodId, 0);
 
-        JSONObject mainNode = createMethodNode(mainMethod, 0);
+        CallGraphSettings settings = CallGraphSettings.getInstance(project);
+
+        JSONObject mainNode = createMethodNode(mainMethod, 0, settings);
         mainNode.put("shape", "circle");
         createGroupIfNotExists(mainMethod);
         nodes.add(mainNode);
 
-        CallGraphSettings settings = CallGraphSettings.getInstance(project);
-
         if (!settings.isLazyExpansion()) {
-            BrowserManager.getInstance(project).showMessage("Collecting nodes...");
             String direction = settings.getGraphDirection();
             if (CallGraphSettings.DIRECTION_CALLERS.equals(direction) || CallGraphSettings.DIRECTION_BOTH.equals(direction)) {
                 findAndAddCallers(mainMethod, 1, settings);
@@ -79,7 +81,6 @@ public final class CallGraphGenerator {
             }
         }
 
-        BrowserManager.getInstance(project).showMessage("Generating the graph...");
         return getJson();
     }
 
@@ -151,8 +152,26 @@ public final class CallGraphGenerator {
         edges.clear();
         groups.clear();
         references.clear();
+        referenceIds.clear();
         nodeLevels.clear();
+        callerAvailability.clear();
+        calleeAvailability.clear();
         truncatedNodes.clear();
+        nextReferenceId = 1;
+    }
+
+    private int referenceId(PsiElement element) {
+        Integer existing = referenceIds.get(element);
+        if (existing != null) return existing;
+
+        int id = nextReferenceId++;
+        referenceIds.put(element, id);
+        references.put(id, element);
+        return id;
+    }
+
+    private boolean hasReference(PsiElement element) {
+        return referenceIds.containsKey(element);
     }
 
     private void findAndAddCallers(PsiMethod method, int depth, CallGraphSettings settings) {
@@ -167,25 +186,23 @@ public final class CallGraphGenerator {
             PsiElement callReference = reference.getElement();
             PsiMethod caller = resolveCallerMethod(callReference);
 
-            if (references.containsKey(callReference.hashCode())) continue;
-            if (caller == null || !caller.getProject().equals(method.getProject())) continue;
-            if (caller.getContainingClass() == null) continue;
-            if (settings.isFilterTestCode() && isTestCode(caller)) continue;
+            if (hasReference(callReference)) continue;
+            if (!isEligibleCaller(caller, method, settings)) continue;
 
             if (added >= cap || nodes.size() >= settings.getMaxTotalNodes()) {
-                truncatedNodes.add(method.hashCode());
+                truncatedNodes.add(referenceId(method));
                 break;
             }
 
-            boolean nodeNotExists = !references.containsKey(caller.hashCode());
+            boolean nodeNotExists = !hasReference(caller);
             if (nodeNotExists) {
-                references.put(caller.hashCode(), caller);
-                nodeLevels.put(caller.hashCode(), depth);
-                nodes.add(createMethodNode(caller, depth));
+                int callerId = referenceId(caller);
+                nodeLevels.put(callerId, depth);
+                nodes.add(createMethodNode(caller, depth, settings));
                 createGroupIfNotExists(caller);
             }
 
-            references.put(callReference.hashCode(), callReference);
+            referenceId(callReference);
             edges.add(createCallerEdge(method, callReference, caller));
             added++;
 
@@ -203,20 +220,18 @@ public final class CallGraphGenerator {
             if (nodes.size() >= settings.getMaxTotalNodes()) break;
             PsiMethod callee = site.callee;
             PsiElement callExpr = site.callExpr;
-            if (callee.getContainingClass() == null) continue;
-            if (!isInProjectSource(callee)) continue;
-            if (settings.isFilterTestCode() && isTestCode(callee)) continue;
-            if (references.containsKey(callExpr.hashCode())) continue;
+            if (!isEligibleCallee(callee, settings)) continue;
+            if (hasReference(callExpr)) continue;
 
-            boolean nodeNotExists = !references.containsKey(callee.hashCode());
+            boolean nodeNotExists = !hasReference(callee);
             if (nodeNotExists) {
-                references.put(callee.hashCode(), callee);
-                nodeLevels.put(callee.hashCode(), depth);
-                nodes.add(createMethodNode(callee, depth));
+                int calleeId = referenceId(callee);
+                nodeLevels.put(calleeId, depth);
+                nodes.add(createMethodNode(callee, depth, settings));
                 createGroupIfNotExists(callee);
             }
 
-            references.put(callExpr.hashCode(), callExpr);
+            referenceId(callExpr);
             edges.add(createCalleeEdge(method, callExpr, callee));
 
             if (nodeNotExists && nodes.size() < settings.getMaxTotalNodes()) {
@@ -235,24 +250,22 @@ public final class CallGraphGenerator {
             PsiElement callReference = reference.getElement();
             PsiMethod caller = resolveCallerMethod(callReference);
 
-            if (references.containsKey(callReference.hashCode())) continue;
-            if (caller == null || !caller.getProject().equals(method.getProject())) continue;
-            if (caller.getContainingClass() == null) continue;
-            if (settings.isFilterTestCode() && isTestCode(caller)) continue;
+            if (hasReference(callReference)) continue;
+            if (!isEligibleCaller(caller, method, settings)) continue;
 
             if (added >= cap || nodes.size() + newNodes.size() >= settings.getMaxTotalNodes()) {
-                truncatedNodes.add(method.hashCode());
+                truncatedNodes.add(referenceId(method));
                 break;
             }
 
-            if (!references.containsKey(caller.hashCode())) {
-                references.put(caller.hashCode(), caller);
-                nodeLevels.put(caller.hashCode(), level);
-                newNodes.add(createMethodNode(caller, level));
+            if (!hasReference(caller)) {
+                int callerId = referenceId(caller);
+                nodeLevels.put(callerId, level);
+                newNodes.add(createMethodNode(caller, level, settings));
                 addGroupIfNotExists(caller, newGroups);
             }
 
-            references.put(callReference.hashCode(), callReference);
+            referenceId(callReference);
             newEdges.add(createCallerEdge(method, callReference, caller));
             added++;
         }
@@ -264,21 +277,69 @@ public final class CallGraphGenerator {
             if (nodes.size() + newNodes.size() >= settings.getMaxTotalNodes()) break;
             PsiMethod callee = site.callee;
             PsiElement callExpr = site.callExpr;
-            if (callee.getContainingClass() == null) continue;
-            if (!isInProjectSource(callee)) continue;
-            if (settings.isFilterTestCode() && isTestCode(callee)) continue;
-            if (references.containsKey(callExpr.hashCode())) continue;
+            if (!isEligibleCallee(callee, settings)) continue;
+            if (hasReference(callExpr)) continue;
 
-            if (!references.containsKey(callee.hashCode())) {
-                references.put(callee.hashCode(), callee);
-                nodeLevels.put(callee.hashCode(), level);
-                newNodes.add(createMethodNode(callee, level));
+            if (!hasReference(callee)) {
+                int calleeId = referenceId(callee);
+                nodeLevels.put(calleeId, level);
+                newNodes.add(createMethodNode(callee, level, settings));
                 addGroupIfNotExists(callee, newGroups);
             }
 
-            references.put(callExpr.hashCode(), callExpr);
+            referenceId(callExpr);
             newEdges.add(createCalleeEdge(method, callExpr, callee));
         }
+    }
+
+    private boolean hasCallers(PsiMethod method, CallGraphSettings settings) {
+        int methodId = referenceId(method);
+        Boolean cached = callerAvailability.get(methodId);
+        if (cached != null) return cached;
+
+        boolean result = hasEligibleCaller(ReferencesSearch.search(method), method, settings);
+        if (!result) {
+            PsiClass containingClass = method.getContainingClass();
+            if (containingClass != null) {
+                for (PsiClass anInterface : containingClass.getInterfaces()) {
+                    PsiMethod interfaceMethod = anInterface.findMethodBySignature(method, false);
+                    if (interfaceMethod != null
+                            && hasEligibleCaller(ReferencesSearch.search(interfaceMethod), method, settings)) {
+                        result = true;
+                        break;
+                    }
+                }
+            }
+        }
+
+        callerAvailability.put(methodId, result);
+        return result;
+    }
+
+    private boolean hasEligibleCaller(Query<PsiReference> query, PsiMethod method, CallGraphSettings settings) {
+        boolean[] found = {false};
+        query.forEach(reference -> {
+            PsiMethod caller = resolveCallerMethod(reference.getElement());
+            if (isEligibleCaller(caller, method, settings)) {
+                found[0] = true;
+                return false;
+            }
+            return true;
+        });
+        return found[0];
+    }
+
+    private boolean isEligibleCaller(@Nullable PsiMethod caller, PsiMethod method, CallGraphSettings settings) {
+        return caller != null
+                && caller.getProject().equals(method.getProject())
+                && caller.getContainingClass() != null
+                && (!settings.isFilterTestCode() || !isTestCode(caller));
+    }
+
+    private boolean isEligibleCallee(PsiMethod callee, CallGraphSettings settings) {
+        return callee.getContainingClass() != null
+                && isInProjectSource(callee)
+                && (!settings.isFilterTestCode() || !isTestCode(callee));
     }
 
     @NotNull
@@ -299,9 +360,9 @@ public final class CallGraphGenerator {
     @NotNull
     private JSONObject createCallerEdge(PsiMethod method, PsiElement callElement, PsiMethod caller) {
         JSONObject edge = new JSONObject();
-        edge.put("id", callElement.hashCode());
-        edge.put("from", caller.hashCode());
-        edge.put("to", method.hashCode());
+        edge.put("id", referenceId(callElement));
+        edge.put("from", referenceId(caller));
+        edge.put("to", referenceId(method));
 
         PsiFile file = callElement.getContainingFile();
         Document document = file.getViewProvider().getDocument();
@@ -317,9 +378,9 @@ public final class CallGraphGenerator {
     @NotNull
     private JSONObject createCalleeEdge(PsiMethod method, PsiElement callExpr, PsiMethod callee) {
         JSONObject edge = new JSONObject();
-        edge.put("id", callExpr.hashCode());
-        edge.put("from", method.hashCode());
-        edge.put("to", callee.hashCode());
+        edge.put("id", referenceId(callExpr));
+        edge.put("from", referenceId(method));
+        edge.put("to", referenceId(callee));
 
         PsiFile file = callExpr.getContainingFile();
         Document document = file.getViewProvider().getDocument();
@@ -332,9 +393,9 @@ public final class CallGraphGenerator {
         return edge;
     }
 
-    private JSONObject createMethodNode(PsiMethod method, int depth) {
+    private JSONObject createMethodNode(PsiMethod method, int depth, CallGraphSettings settings) {
         JSONObject node = new JSONObject();
-        node.put("id", method.hashCode());
+        node.put("id", referenceId(method));
         node.put("group", method.getContainingClass().getQualifiedName());
         node.put("title", method.getContainingClass().getQualifiedName() + "\n" + method.getName());
         node.put("level", depth);
@@ -347,8 +408,8 @@ public final class CallGraphGenerator {
         }
 
         node.put("label", label);
-        node.put("hasCallers", true);
-        node.put("hasCallees", hasCallees(method));
+        node.put("hasCallers", hasCallers(method, settings));
+        node.put("hasCallees", hasCallees(method, settings));
         return node;
     }
 
@@ -392,12 +453,21 @@ public final class CallGraphGenerator {
         return sites;
     }
 
-    private boolean hasCallees(PsiMethod method) {
-        KtNamedFunction ktFunction = getKotlinOrigin(method);
-        if (ktFunction != null) {
-            return !PsiTreeUtil.findChildrenOfType(ktFunction, KtCallExpression.class).isEmpty();
+    private boolean hasCallees(PsiMethod method, CallGraphSettings settings) {
+        int methodId = referenceId(method);
+        Boolean cached = calleeAvailability.get(methodId);
+        if (cached != null) return cached;
+
+        boolean result = false;
+        for (CallSite site : collectCalleeSites(method)) {
+            if (isEligibleCallee(site.callee, settings)) {
+                result = true;
+                break;
+            }
         }
-        return method.getBody() != null && !PsiTreeUtil.findChildrenOfType(method.getBody(), PsiMethodCallExpression.class).isEmpty();
+
+        calleeAvailability.put(methodId, result);
+        return result;
     }
 
     /**

@@ -2,6 +2,7 @@ import { useRef, useEffect, useState, useCallback } from 'react'
 import vis from 'vis-network/standalone/umd/vis-network.min.js'
 import { useControls, Leva, folder } from 'leva'
 import visOptions from './vis-options'
+import { getSatelliteVisibility } from './satellite-visibility.cjs'
 import '@fortawesome/fontawesome-free/css/all.min.css'
 import './App.css'
 
@@ -141,6 +142,8 @@ export default function App() {
             hiddenNodes: new Set(),
             expandedCallers: new Set(),
             expandedCallees: new Set(),
+            manuallyExpandableCallers: new Set(),
+            manuallyExpandableCallees: new Set(),
             nodesWithSatellites: new Set(),
             truncatedNodes: new Set(),
             pendingExpandDirection: null,
@@ -161,8 +164,20 @@ export default function App() {
             const newNodes = [], newEdges = []
 
             const nodeData = n.body.data.nodes.get(nodeId)
-            if (!s.expandedCallers.has(nodeId) && (s.isLazyMode || s.truncatedNodes.has(nodeId))) {
-                const isTruncated = s.truncatedNodes.has(nodeId)
+            const isTruncated = s.truncatedNodes.has(nodeId)
+            const { showCallers, showCallees } = getSatelliteVisibility({
+                isLazyMode: s.isLazyMode,
+                isRoot: nodeId === s.rootNodeId,
+                isTruncated,
+                manuallyExpandableCallers: s.manuallyExpandableCallers.has(nodeId),
+                manuallyExpandableCallees: s.manuallyExpandableCallees.has(nodeId),
+                callersExpanded: s.expandedCallers.has(nodeId),
+                calleesExpanded: s.expandedCallees.has(nodeId),
+                hasCallers: nodeData?.hasCallers,
+                hasCallees: nodeData?.hasCallees,
+            })
+
+            if (showCallers) {
                 newNodes.push({
                     id: '__callers__' + nodeId,
                     label: isTruncated ? '+ more callers' : '+ callers',
@@ -179,7 +194,7 @@ export default function App() {
                 newEdges.push({ id: '__edge_callers__' + nodeId, from: nodeId, to: '__callers__' + nodeId, length: 70, dashes: [5, 5], arrows: { to: { enabled: false } }, color: { color: '#4A8FD4', opacity: 0.45 }, selectable: false, hoverWidth: 0 })
             }
 
-            if (nodeId === s.rootNodeId && !s.expandedCallees.has(nodeId) && nodeData?.hasCallees) {
+            if (showCallees) {
                 newNodes.push({
                     id: '__callees__' + nodeId,
                     label: '+ callees',
@@ -276,6 +291,8 @@ export default function App() {
             s.hiddenNodes.clear()
             s.expandedCallers.clear()
             s.expandedCallees.clear()
+            s.manuallyExpandableCallers.clear()
+            s.manuallyExpandableCallees.clear()
             s.nodesWithSatellites.clear()
             s.truncatedNodes.clear()
             s.pendingExpandDirection = null
@@ -343,11 +360,32 @@ export default function App() {
             n.body.data.nodes.add(seeded)
             n.body.data.edges.add(data.edges)
 
+            // Outside Lazy Mode, a satellite click starts a manual expansion branch.
+            // Keep the same direction available on newly discovered nodes so the
+            // branch can be explored recursively instead of stopping after one level.
+            const manuallyExpandableNodeIds = new Set()
+            if (!s.isLazyMode) {
+                if (expandDirection === 'callers') {
+                    data.edges.forEach(edge => manuallyExpandableNodeIds.add(edge.from))
+                    manuallyExpandableNodeIds.forEach(id => s.manuallyExpandableCallers.add(id))
+                } else if (expandDirection === 'callees') {
+                    data.edges.forEach(edge => manuallyExpandableNodeIds.add(edge.to))
+                    manuallyExpandableNodeIds.forEach(id => s.manuallyExpandableCallees.add(id))
+                }
+            }
+
             // Ensure newly added nodes are not fixed
             seeded.forEach(node => n.body.data.nodes.update({ id: node.id, fixed: { x: false, y: false } }))
 
             // Only show satellites for newly added nodes
             seeded.forEach(node => showSatellitesForNode(node.id))
+            // A newly discovered relationship can point to a node that was already
+            // present in the graph. Refresh those nodes too so their recursive
+            // manual-expansion control becomes visible.
+            const seededIds = new Set(seeded.map(node => node.id))
+            manuallyExpandableNodeIds.forEach(id => {
+                if (!seededIds.has(id)) showSatellitesForNode(id)
+            })
 
             const physicsWasEnabled = n.physics.options.enabled
             n.setOptions({ physics: { enabled: true } })

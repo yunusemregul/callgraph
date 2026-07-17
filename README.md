@@ -1,5 +1,7 @@
 # CallGraph - IntelliJ Plugin
 
+[![Verify](https://github.com/yunusemregul/callgraph/actions/workflows/verify.yml/badge.svg)](https://github.com/yunusemregul/callgraph/actions/workflows/verify.yml)
+
 <p align="center">
   <img src="src/main/resources/META-INF/pluginIcon.svg" alt="CallGraph Icon" height="128">
   <br>
@@ -124,6 +126,16 @@ The frontend uses webpack to bundle JavaScript and HTML files.
 
 This will generate the bundled files in `src/main/resources/build/`, which are then included in the plugin.
 
+## Verification
+
+Run every fixture compilation, frontend behavior test, and IntelliJ graph integration test with one command:
+
+```shell
+./verify-all
+```
+
+The same command runs automatically in GitHub Actions for every push and pull request.
+
 ## Contributing
 
 Contributions are welcome! If you'd like to contribute, please:
@@ -134,6 +146,12 @@ Contributions are welcome! If you'd like to contribute, please:
 4. Submit a pull request
 
 ## Version History
+
+### 1.8
+- Added recursive caller and callee expansion controls for every expandable method
+- Fixed missing graph relationships caused by colliding PSI element hash codes
+- Added Java, mixed Java/Kotlin, and large-project integration fixtures
+- Added one-command local verification and GitHub Actions coverage
 
 ### 1.7
 - Added Kotlin support: generate call graphs for Kotlin methods and functions

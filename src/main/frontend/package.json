@@ -4,7 +4,8 @@
   "description": "Frontend of Intellij IDEA CallGraph plugin.",
   "main": "index.js",
   "scripts": {
-    "build:prod": "webpack --mode production"
+    "build:prod": "webpack --mode production",
+    "test": "node --test src/js/*.test.cjs"
   },
   "author": "yunusemregul",
   "license": "ISC",
